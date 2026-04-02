@@ -38,6 +38,13 @@ android {
         compose = true
     }
 }
+configurations.all {
+    resolutionStrategy {
+        force("androidx.vectordrawable:vectordrawable:1.1.0")
+        force("androidx.vectordrawable:vectordrawable-animated:1.1.0")
+    }
+}
+
 
 dependencies {
     implementation(libs.androidx.core.ktx)
@@ -57,4 +64,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     implementation("org.jsoup:jsoup:1.15.4")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.maplibre.gl:android-sdk:11.0.0")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("org.maplibre.gl:android-plugin-annotation-v9:3.0.0")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 }

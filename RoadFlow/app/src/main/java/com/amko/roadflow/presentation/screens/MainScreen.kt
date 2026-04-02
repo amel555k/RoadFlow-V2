@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,7 +35,7 @@ private sealed class RadarListItem {
 }
 
 @Composable
-fun MainScreen() {
+fun MainScreen(onOpenDrawer: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -121,12 +123,22 @@ fun MainScreen() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "RoadFlow",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "Meni",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .padding(end = 16.dp)
+                            .clickable { onOpenDrawer() }
+                    )
+                    Text(
+                        text = "RoadFlow",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 Text(
                     text = currentDate.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")),
                     color = Color.White,
