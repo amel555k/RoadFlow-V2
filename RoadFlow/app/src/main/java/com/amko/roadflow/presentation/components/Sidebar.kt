@@ -7,8 +7,10 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+
 
 @Composable
 fun Sidebar(
@@ -20,15 +22,15 @@ fun Sidebar(
         drawerState = drawerState,
         gesturesEnabled = false,
         drawerContent = {
-            ModalDrawerSheet {
+            ModalDrawerSheet (drawerContainerColor=Color(0xFF2E2E5E)){
 
                 NavigationDrawerItem(
-                    label = { Text("Glavni Ekran") },
+                    label = { Text("Lista", color = Color.White) },
                     selected = false,
                     onClick = { onNavigate("main") }
                 )
                 NavigationDrawerItem(
-                    label = { Text("Mape") },
+                    label = { Text("Mape", color = Color.White) },
                     selected = false,
                     onClick = { onNavigate("map") }
                 )

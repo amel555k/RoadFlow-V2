@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.amko.roadflow.data.local.RadarConfig
 import com.amko.roadflow.data.local.RadarParser
 import com.amko.roadflow.data.local.FirebaseService
+import com.amko.roadflow.data.local.LocationTrackingService
 import com.amko.roadflow.domain.model.RadarData
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val firebaseService = FirebaseService()
     private val parser = RadarParser(application, firebaseService)
+
+    val locationService = LocationTrackingService(application)
 
     private val _activeRadars = MutableStateFlow<List<RadarData>>(emptyList())
     val activeRadars: StateFlow<List<RadarData>> = _activeRadars
@@ -77,6 +80,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             false
         }
     }
+
     enum class RadarFilter { ACTIVE, TODAY }
 
     fun setFilter(filter: RadarFilter) {
@@ -105,4 +109,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 speedLimit = coord.speedLimit
             )
         }
+
+    override fun onCleared() {
+        super.onCleared()
+        locationService.dispose()
+    }
 }

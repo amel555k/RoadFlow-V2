@@ -40,23 +40,28 @@ fun RadarInfoCard(
                     Text("✕", color = Color.White)
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = radar.location,
-                color = Color(0xFFCCCCCC),
-                fontSize = 14.sp
-            )
+
+            if (radar.city.trim().lowercase() != radar.location.trim().lowercase()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = radar.location,
+                    color = Color.White,
+                    fontSize = 14.sp
+                )
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = radar.time,
-                color = Color(0xFFCCCCCC),
+                color = Color.White,
                 fontSize = 14.sp
             )
+
             if (radar.speedLimit != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Ograničenje: ${radar.speedLimit} km/h",
-                    color = Color(0xFFFF9900),
+                    text = "OGRANIČENJE: ${radar.speedLimit} km/h",
+                    color = Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
