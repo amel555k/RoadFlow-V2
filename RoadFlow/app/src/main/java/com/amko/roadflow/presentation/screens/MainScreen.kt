@@ -13,41 +13,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.amko.roadflow.data.local.FirebaseService
-import com.amko.roadflow.data.local.RadarConfig
-import com.amko.roadflow.data.local.RadarParser
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amko.roadflow.domain.model.Canton
 import com.amko.roadflow.domain.model.RadarData
-import kotlinx.coroutines.launch
-import java.time.LocalDate
+import com.amko.roadflow.presentation.viewmodel.MainViewModel
+import com.amko.roadflow.presentation.viewmodel.RadarListItem
 import java.time.format.DateTimeFormatter
-import com.amko.roadflow.data.local.NoInternetWithCacheException
-
-private sealed class RadarListItem {
-    data class CityHeader(val city: String) : RadarListItem()
-    data class RadarEntry(val radar: RadarData) : RadarListItem()
-    data class Spacer(val id: String) : RadarListItem()
-}
 
 @Composable
 fun MainScreen(onOpenDrawer: () -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val viewModel: MainViewModel = viewModel()
 
-    val firebaseService = remember { FirebaseService() }
-    val parser = remember { RadarParser(context, firebaseService) }
+    val flatList by viewModel.uiList.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val selectedCanton by viewModel.selectedCanton.collectAsState()
+    val showNoInternet by viewModel.showNoInternet.collectAsState()
+    val currentDate by viewModel.currentDate.collectAsState()
 
-    var radars by remember { mutableStateOf<List<RadarData>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var selectedCanton by remember { mutableStateOf<Canton?>(Canton.Srednjobosanski) }
     var isDropdownOpen by remember { mutableStateOf(false) }
-    var showNoInternet by remember { mutableStateOf(false) }
-    var currentDate by remember { mutableStateOf(LocalDate.now()) }
 
     val cantonList = remember {
         listOf(
@@ -66,50 +53,6 @@ fun MainScreen(onOpenDrawer: () -> Unit) {
     }
 
     val selectedCantonLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: ""
-
-    val flatList = remember(radars, selectedCanton) {
-        val filtered = if (selectedCanton == null) {
-            radars
-        } else {
-            val citiesInCanton = RadarConfig.locations
-                .filter { it.canton == selectedCanton }
-                .map { it.name }
-                .toHashSet()
-            radars.filter { citiesInCanton.contains(it.city) }
-        }
-
-        val grouped = filtered.groupBy { it.city }
-
-        buildList {
-            grouped.forEach { (city, cityRadars) ->
-                add(RadarListItem.CityHeader(city))
-                cityRadars.forEach { radar ->
-                    add(RadarListItem.RadarEntry(radar))
-                }
-                add(RadarListItem.Spacer(id = "spacer_$city"))
-            }
-        }
-    }
-
-    fun loadData() {
-        scope.launch {
-            isLoading = true
-            try {
-                radars = parser.parseAllLocationsAsync()
-                currentDate = LocalDate.now()
-            } catch (e: NoInternetWithCacheException) {
-                radars = e.cachedRadars
-                currentDate = LocalDate.now()
-                showNoInternet = true
-            } catch (_: Exception) {
-                showNoInternet = true
-            } finally {
-                isLoading = false
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) { loadData() }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFFD9D9D9))) {
 
@@ -253,7 +196,7 @@ fun MainScreen(onOpenDrawer: () -> Unit) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    selectedCanton = canton
+                                    viewModel.selectCanton(canton)
                                     isDropdownOpen = false
                                 }
                                 .background(if (isSelected) Color(0xFFE8E8F5) else Color.White)
@@ -272,7 +215,7 @@ fun MainScreen(onOpenDrawer: () -> Unit) {
         }
 
         if (showNoInternet) {
-            Dialog(onDismissRequest = { showNoInternet = false }) {
+            Dialog(onDismissRequest = { viewModel.showNoInternet.value = false }) {
                 Card(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -293,7 +236,7 @@ fun MainScreen(onOpenDrawer: () -> Unit) {
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
-                            onClick = { showNoInternet = false },
+                            onClick = { viewModel.showNoInternet.value = false },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212143)),
                             modifier = Modifier.align(Alignment.End)
                         ) {

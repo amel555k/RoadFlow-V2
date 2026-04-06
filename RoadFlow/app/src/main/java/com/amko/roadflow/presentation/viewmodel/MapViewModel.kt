@@ -3,6 +3,7 @@ package com.amko.roadflow.presentation.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.amko.roadflow.data.local.RadarAlertService
 import com.amko.roadflow.data.local.RadarConfig
 import com.amko.roadflow.data.local.RadarParser
 import com.amko.roadflow.data.local.FirebaseService
@@ -20,6 +21,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val parser = RadarParser(application, firebaseService)
 
     val locationService = LocationTrackingService(application)
+    val alertService = RadarAlertService(application)
 
     private val _activeRadars = MutableStateFlow<List<RadarData>>(emptyList())
     val activeRadars: StateFlow<List<RadarData>> = _activeRadars
@@ -30,6 +32,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
 
+    private val _selectedFilter = MutableStateFlow(RadarFilter.ACTIVE)
+    val selectedFilter: StateFlow<RadarFilter> = _selectedFilter
+
+    private val _selectedRadar = MutableStateFlow<RadarData?>(null)
+    val selectedRadar: StateFlow<RadarData?> = _selectedRadar
+
+    private val _isTransitioningToTracking = MutableStateFlow(false)
+    val isTransitioningToTracking: StateFlow<Boolean> = _isTransitioningToTracking
+
     init {
         loadRadars()
     }
@@ -38,31 +49,18 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val all = parser.parseAllLocationsAsync()
-                _allRadars.value = all
+                parser.parseAllLocationsAsFlow().collect { all ->
+                    _allRadars.value = all
 
-                val now = LocalTime.now()
-                val active = all.filter { radar ->
-                    radar.time != "INFO" && isActiveNow(radar.time, now)
-                }
-
-                val stacionarni = RadarConfig.coordinates
-                    .filter { it.stacionaran }
-                    .map { coord ->
-                        RadarData(
-                            city = coord.mainName,
-                            time = "00:00 do 24:00",
-                            location = coord.mainName,
-                            latitude = coord.latitude,
-                            longitude = coord.longitude,
-                            speedLimit = coord.speedLimit
-                        )
+                    val now = LocalTime.now()
+                    val active = all.filter { radar ->
+                        radar.time != "INFO" && isActiveNow(radar.time, now)
                     }
 
-                _activeRadars.value = active + stacionarni
+                    _activeRadars.value = active + getStacionarni()
+                    _isLoading.value = false
+                }
             } catch (e: Exception) {
-
-            } finally {
                 _isLoading.value = false
             }
         }
@@ -84,6 +82,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     enum class RadarFilter { ACTIVE, TODAY }
 
     fun setFilter(filter: RadarFilter) {
+        _selectedFilter.value = filter
         viewModelScope.launch {
             val now = LocalTime.now()
             _activeRadars.value = when (filter) {
@@ -95,6 +94,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 } + getStacionarni()
             }
         }
+    }
+
+    fun selectRadar(radar: RadarData?) {
+        _selectedRadar.value = radar
+    }
+
+    fun setTransitioningToTracking(value: Boolean) {
+        _isTransitioningToTracking.value = value
     }
 
     private fun getStacionarni() = RadarConfig.coordinates
@@ -113,5 +120,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         locationService.dispose()
+        alertService.dispose()
     }
 }

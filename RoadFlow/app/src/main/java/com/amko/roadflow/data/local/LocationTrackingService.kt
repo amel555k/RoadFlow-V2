@@ -36,6 +36,8 @@ class LocationTrackingService(private val context: Context) {
 
     private val _isActiveTracking = MutableStateFlow(false)
     val isActiveTracking: StateFlow<Boolean> = _isActiveTracking.asStateFlow()
+    private val _speedKmh = MutableStateFlow(0f)
+    val speedKmh: StateFlow<Float> = _speedKmh.asStateFlow()
     fun setInitialLocation(location: Location) {
         _location.value = location
     }
@@ -105,6 +107,9 @@ class LocationTrackingService(private val context: Context) {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { loc ->
                     _location.value = loc
+
+                    val speedMs = if (loc.hasSpeed()) loc.speed else 0f
+                    _speedKmh.value = speedMs * 3.6f
                 }
             }
         }

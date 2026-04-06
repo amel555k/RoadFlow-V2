@@ -20,110 +20,115 @@ import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
-
+import kotlinx.coroutines.flow.flowOn
+import com.amko.roadflow.domain.model.Canton
 class NoInternetWithCacheException(val cachedRadars: List<RadarData>) : Exception("Nema internet konekcije")
 
 class RadarParser(
     private val context: Context,
     private val firebaseService: FirebaseService
 ) {
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(10, 5, java.util.concurrent.TimeUnit.MINUTES))
+        .build()
     private val filePath = File(context.filesDir, "lista.txt")
     private val baseUrl = Secrets.BASE_URL
 
-    private val htmlCache = ConcurrentHashMap<Int, String>()
+    private val htmlCache = ConcurrentHashMap<Int, kotlinx.coroutines.Deferred<String>>()
     private val cacheMutex = Mutex()
 
-    suspend fun parseAllLocationsAsync(): List<RadarData> = withContext(Dispatchers.IO) {
-        val todayDate = LocalDate.now()
-
-        if (!isInternetAvailable()) {
-            if (filePath.exists()) {
-                val cachedContent = readFromFileAsync()
-                val cachedRadars = parseFileContent(cachedContent)
-                if (cachedRadars.isNotEmpty()) {
-                    throw NoInternetWithCacheException(cachedRadars)
-                }
-            }
-            throw java.net.UnknownHostException("Nema internet konekcije")
-        }
-
-        if (filePath.exists()) {
-            val lastModified = LocalDate.ofEpochDay(filePath.lastModified() / 86400000L)
-            if (lastModified == todayDate) {
-                val cachedContent = readFromFileAsync()
-                return@withContext parseFileContent(cachedContent)
-            }
-        }
-
-        val rawRadars = mutableListOf<RadarData>()
-
-        val firebaseData = firebaseService.getFirebaseRadarsAsync(todayDate)
-        rawRadars.addAll(firebaseData)
-
-        cacheMutex.withLock { htmlCache.clear() }
-
-        coroutineScope {
-            val deferredList = RadarConfig.locations
-                .filter { !it.fromFirebase }
-                .flatMap { location ->
-                    location.possibleIds.map { id ->
-                        async { parseSingleIdWithErrorHandlingAsync(location.name, id, location.mapEnabled) }
-                    }
-                }
-
-            val results = deferredList.awaitAll()
-
-            results.forEach { radarsFromLink ->
-                radarsFromLink.forEach { radar ->
-                    if ((radar.pageDate != null && radar.pageDate.toLocalDate() == todayDate) || radar.time == "INFO") {
-                        rawRadars.add(radar)
-                    }
-                }
-            }
-        }
-
-        val finalRadars = rawRadars
-            .filter { it.time != "INFO" }
-            .groupBy { Triple(it.city, it.time, it.location) }
-            .map { it.value.first() }
-            .sortedWith(compareByDescending<RadarData> { it.city }
-                .thenByDescending { it.pageDate ?: LocalDateTime.MIN })
-            .toMutableList()
-
-        if (finalRadars.none { it.time != "INFO" }) {
-            finalRadars.clear()
-            finalRadars.add(
-                RadarData(
-                    city = "STATUS SISTEMA",
-                    time = "INFO",
-                    location = "Nisu pronađeni radari za današnji datum (${todayDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}).",
-                    pageDate = LocalDateTime.now()
-                )
-            )
-        }
-
-        val uniqueRadars = finalRadars
-            .groupBy { Triple(it.city, it.time, it.location) }
-            .map { it.value.first() }
-
-        val sb = StringBuilder()
-        uniqueRadars.groupBy { it.city }.forEach { (city, radars) ->
-            sb.appendLine("=== $city ===")
-            radars.forEach { radar ->
-                sb.appendLine("${radar.time} - ${radar.location}")
-            }
-            sb.appendLine()
-        }
-
-        saveToFileAsync(sb.toString())
-
-        if (uniqueRadars.any { it.time != "INFO" }) {
-            firebaseService.saveRadarsToHistoryAsync(todayDate, uniqueRadars)
-        }
-        uniqueRadars
+    companion object {
+        private val WHITESPACE_REGEX = Regex("\\s+")
+        private val TIME_PATTERN = Regex("""\d{1,2}:\d{2}(?:\s*sati)?\s*[–\-do]+\s*\d{1,2}:\d{2}(?:\s*sati)?""")
+        private val SATI_REPLACE_REGEX = Regex("\\s*sati", RegexOption.IGNORE_CASE)
+        private val SATI_REGEX = Regex("\\s*sati\\s*", RegexOption.IGNORE_CASE)
+        private val DATE_PATTERN = Regex("""([0-9]{1,2})[.\s]+([0-9]{1,2})[.\s]+([0-9]{4})""")
     }
 
+    suspend fun parseAllLocationsAsFlow(): kotlinx.coroutines.flow.Flow<List<RadarData>> =
+        kotlinx.coroutines.flow.flow {
+            val todayDate = LocalDate.now()
+
+            if (filePath.exists()) {
+                val lastModified = LocalDate.ofEpochDay(filePath.lastModified() / 86400000L)
+                if (lastModified == todayDate) {
+                    emit(parseFileContent(readFromFileAsync()))
+                    return@flow
+                }
+            }
+
+            if (!isInternetAvailable()) {
+                if (filePath.exists()) {
+                    val cached = parseFileContent(readFromFileAsync())
+                    if (cached.isNotEmpty()) throw NoInternetWithCacheException(cached)
+                }
+                throw java.net.UnknownHostException("Nema internet konekcije")
+            }
+
+            cacheMutex.withLock { htmlCache.clear() }
+
+            val accumulated = mutableListOf<RadarData>()
+
+            coroutineScope {
+                val firebaseData = firebaseService.getFirebaseRadarsAsync(todayDate)
+                accumulated.addAll(firebaseData)
+                emit(accumulated.sortedWith(compareByDescending<RadarData> { it.city }
+                    .thenByDescending { it.pageDate ?: LocalDateTime.MIN }))
+                val locationGroups = RadarConfig.locations.filter { !it.fromFirebase }
+
+                for (location in locationGroups) {
+                    val deferredList = location.possibleIds.map { id ->
+                        async { parseSingleIdWithErrorHandlingAsync(location.name, id, location.mapEnabled) }
+                    }
+
+                    deferredList.awaitAll().forEach { radarsFromLink ->
+                        radarsFromLink.forEach { radar ->
+                            if ((radar.pageDate != null && radar.pageDate.toLocalDate() == todayDate) || radar.time == "INFO") {
+                                accumulated.add(radar)
+                            }
+                        }
+                    }
+
+                    emit(accumulated
+                        .filter { it.time != "INFO" }
+                        .groupBy { Triple(it.city, it.time, it.location) }
+                        .map { it.value.first() }
+                        .sortedWith(compareByDescending<RadarData> { it.city }
+                            .thenByDescending { it.pageDate ?: LocalDateTime.MIN }))
+                }
+            }
+
+            val deduped = accumulated
+                .filter { it.time != "INFO" }
+                .groupBy { Triple(it.city, it.time, it.location) }
+                .map { it.value.first() }
+                .sortedWith(compareByDescending<RadarData> { it.city }
+                    .thenByDescending { it.pageDate ?: LocalDateTime.MIN })
+
+            val uniqueRadars = if (deduped.isEmpty()) {
+                listOf(RadarData(
+                    city = "STATUS SISTEMA", time = "INFO",
+                    location = "Nisu pronađeni radari za današnji datum (${todayDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}).",
+                    pageDate = LocalDateTime.now()
+                ))
+            } else deduped
+
+            emit(uniqueRadars)
+
+            val sb = StringBuilder()
+            uniqueRadars.groupBy { it.city }.forEach { (city, radars) ->
+                sb.appendLine("=== $city ===")
+                radars.forEach { sb.appendLine("${it.time} - ${it.location}") }
+                sb.appendLine()
+            }
+            saveToFileAsync(sb.toString())
+
+            if (uniqueRadars.any { it.time != "INFO" }) {
+                firebaseService.saveRadarsToHistoryAsync(todayDate, uniqueRadars)
+            }
+        }.flowOn(Dispatchers.IO)
     private suspend fun parseSingleIdWithErrorHandlingAsync(baseCityName: String, id: Int, mapEnabled: Boolean): List<RadarData> {
         return try {
             parseSingleIdAsync(baseCityName, id, mapEnabled)
@@ -137,43 +142,35 @@ class RadarParser(
         val radars = mutableListOf<RadarData>()
         val url = "$baseUrl$id"
 
-        val html = cacheMutex.withLock {
-            htmlCache[id]
-        } ?: run {
-            val request = Request.Builder().url(url).build()
-            val fetched = client.newCall(request).execute().use { it.body?.string() ?: "" }
-            cacheMutex.withLock {
-                if (!htmlCache.containsKey(id)) {
-                    htmlCache[id] = fetched
-                    println("[Cache MISS] Fetching ID=$id")
-                } else {
-                    println("[Cache HIT]  Reusing ID=$id za grad '$baseCityName'")
+        val deferredHtml = cacheMutex.withLock {
+            htmlCache.getOrPut(id) {
+                kotlinx.coroutines.GlobalScope.async(Dispatchers.IO) {
+                    val request = Request.Builder().url(url).build()
+                    client.newCall(request).execute().use { it.body?.string() ?: "" }
                 }
             }
-            fetched
         }
+        val html = deferredHtml.await()
 
         val doc = Jsoup.parse(html)
         var fullText = doc.body().text()
         fullText = fullText.replace("\u00A0", " ")
-        fullText = fullText.replace(Regex("\\s+"), " ")
+        fullText = fullText.replace(WHITESPACE_REGEX, " ")
 
         if (id != 323 && id != 393 && !cityNameExistsInHtml(fullText, baseCityName)) {
-            println("[RadarParser] Grad '$baseCityName' se ne pojavljuje na stranici ID=$id. Preskačem.")
             return@withContext emptyList()
         }
 
         val foundDate = extractDateFromHtml(doc, fullText)
         val cityName = baseCityName
-        val timePattern = Regex("""\d{1,2}:\d{2}(?:\s*sati)?\s*[–\-do]+\s*\d{1,2}:\d{2}(?:\s*sati)?""")
-        val timeMatches = timePattern.findAll(fullText).toList()
+        val timeMatches = TIME_PATTERN.findAll(fullText).toList()
 
         if (timeMatches.isNotEmpty()) {
             timeMatches.forEachIndexed { i, timeMatch ->
                 val rawTime = timeMatch.value.trim()
-                var cleanTime = rawTime.replace(Regex("\\s*sati", RegexOption.IGNORE_CASE), "")
+                var cleanTime = rawTime.replace(SATI_REPLACE_REGEX, "")
                 cleanTime = cleanTime.replace("–", " do ").replace("-", " do ")
-                cleanTime = cleanTime.replace(Regex("\\s+"), " ").trim()
+                cleanTime = cleanTime.replace(WHITESPACE_REGEX, " ").trim()
 
                 val startPos = timeMatch.range.last + 1
                 val endPos = if (i < timeMatches.size - 1) timeMatches[i + 1].range.first else fullText.length
@@ -245,10 +242,26 @@ class RadarParser(
         radars
     }
 
+    private var cachedAllRadars: List<RadarData> = emptyList()
+
+    suspend fun getRadarsForCanton(canton: Canton): List<RadarData> {
+        if (cachedAllRadars.isEmpty()) {
+            cachedAllRadars = parseFileContent(readFromFileAsync())
+        }
+        val citiesInCanton = RadarConfig.locations
+            .filter { it.canton == canton }
+            .map { it.name }
+            .toHashSet()
+        return cachedAllRadars.filter { citiesInCanton.contains(it.city) }
+    }
+
+    fun updateCache(radars: List<RadarData>) {
+        cachedAllRadars = radars
+    }
     private fun preprocessBihamkLocation(location: String): String {
         if (location.isBlank()) return location
-        var result = location.replace(Regex("\\s*sati\\s*", RegexOption.IGNORE_CASE), " ")
-        result = result.replace(Regex("\\s+"), " ")
+        var result = location.replace(SATI_REGEX, " ")
+        result = result.replace(WHITESPACE_REGEX, " ")
         return result.trim()
     }
 
@@ -259,8 +272,7 @@ class RadarParser(
             val dateFromTitle = extractDateFromText(titleText)
             if (dateFromTitle != null) return dateFromTitle
         }
-        val regex = Regex("""([0-9]{1,2})[.\s]+([0-9]{1,2})[.\s]+([0-9]{4})""")
-        val matches = regex.findAll(fullText).toList()
+        val matches = DATE_PATTERN.findAll(fullText).toList()
         if (matches.isNotEmpty()) {
             return tryParseDateTime(matches.last())
         }
@@ -268,8 +280,7 @@ class RadarParser(
     }
 
     private fun extractDateFromText(text: String): LocalDateTime? {
-        val regex = Regex("""([0-9]{1,2})[.\s]+([0-9]{1,2})[.\s]+([0-9]{4})""")
-        val match = regex.find(text) ?: return null
+        val match = DATE_PATTERN.find(text) ?: return null
         return tryParseDateTime(match)
     }
 

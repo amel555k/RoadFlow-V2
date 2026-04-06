@@ -1,9 +1,6 @@
 package com.amko.roadflow.presentation.screens
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -27,7 +24,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amko.roadflow.R
 import com.amko.roadflow.data.local.Secrets.MAP_API_KEY
-import com.amko.roadflow.domain.model.RadarData
 import com.amko.roadflow.presentation.components.RadarInfoCard
 import com.amko.roadflow.presentation.viewmodel.MapViewModel
 import kotlinx.coroutines.delay
@@ -43,7 +39,12 @@ import org.maplibre.android.plugins.annotation.Symbol
 import org.maplibre.android.plugins.annotation.SymbolManager
 import org.maplibre.android.plugins.annotation.SymbolOptions
 import androidx.activity.compose.rememberLauncherForActivityResult
-
+import androidx.compose.foundation.border
+import com.amko.roadflow.presentation.components.FilterButton
+import com.amko.roadflow.utils.createUserBitmap
+import com.amko.roadflow.utils.createCircleFeature
+import com.amko.roadflow.utils.createRadarBitmap
+import com.amko.roadflow.presentation.components.SpeedOverlay
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
 private const val USER_ICON_ID = "user-icon"
@@ -63,14 +64,20 @@ fun MapScreen(
     val isActiveTracking by viewModel.locationService.isActiveTracking.collectAsState()
 
     val mapViewRef = remember { MapView(context) }
+    val alertService = viewModel.alertService
+
+    val speedLimitInZone by alertService.speedLimit.collectAsState()
+    val currentSpeed by viewModel.locationService.speedKmh.collectAsState()
+    val isInRadarZone by alertService.isInZone.collectAsState()
     var mapRef by remember { mutableStateOf<MapLibreMap?>(null) }
     var styleRef by remember { mutableStateOf<Style?>(null) }
     var symbolManager by remember { mutableStateOf<SymbolManager?>(null) }
-    var selectedFilter by remember { mutableStateOf("active") }
-    var selectedRadar by remember { mutableStateOf<RadarData?>(null) }
+    val selectedFilter by viewModel.selectedFilter.collectAsState()
+    val selectedRadar by viewModel.selectedRadar.collectAsState()
     var isMapReady by remember { mutableStateOf(false) }
     var userSymbol by remember { mutableStateOf<Symbol?>(null) }
     var didInitialZoom by remember { mutableStateOf(false) }
+    var isTransitioningToTracking by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -170,16 +177,29 @@ fun MapScreen(
         )?.setGeoJson(
             org.maplibre.geojson.FeatureCollection.fromFeatures(features)
         )
+        alertService.setActiveRadars(activeRadars)
     }
 
-    LaunchedEffect(userLocation, userHeading, isMapReady) {
+    LaunchedEffect(userLocation) {
+        val loc = userLocation ?: return@LaunchedEffect
+        if (isActiveTracking) {
+            alertService.checkProximity(loc)
+        }
+    }
+
+    LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking) {
         val map = mapRef ?: return@LaunchedEffect
         val sm = symbolManager ?: return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
         if (!isMapReady) return@LaunchedEffect
 
+        map.uiSettings.isScrollGesturesEnabled = !isActiveTracking
+        map.uiSettings.isZoomGesturesEnabled = !isActiveTracking
+        map.uiSettings.isRotateGesturesEnabled = !isActiveTracking
+        map.uiSettings.isTiltGesturesEnabled = !isActiveTracking
+
         val existing = userSymbol
-        val rotation = if (isActiveTracking) userHeading.toFloat() else 0f
+        val rotation =  0f
 
         if (existing != null) {
             existing.latLng = LatLng(loc.latitude, loc.longitude)
@@ -207,7 +227,7 @@ fun MapScreen(
                         .build()
                 ), 1000
             )
-        } else if (isActiveTracking) {
+        } else if (isActiveTracking && !isTransitioningToTracking) {
             map.easeCamera(
                 CameraUpdateFactory.newCameraPosition(
                     CameraPosition.Builder()
@@ -298,7 +318,7 @@ fun MapScreen(
 
                             sm.addClickListener { symbol ->
                                 val index = symbol.data?.asInt ?: return@addClickListener false
-                                selectedRadar = activeRadars.getOrNull(index)
+                                viewModel.selectRadar(activeRadars.getOrNull(index))
                                 true
                             }
                             map.animateCamera(
@@ -312,6 +332,17 @@ fun MapScreen(
                     }
                 }
             )
+
+            if (isActiveTracking) {
+                SpeedOverlay(
+                    isInRadarZone = isInRadarZone,
+                    speedLimitInZone = speedLimitInZone,
+                    currentSpeed = currentSpeed,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 80.dp, end = 20.dp)
+                )
+            }
 
             Column(
                 modifier = Modifier
@@ -330,6 +361,7 @@ fun MapScreen(
                             val map = mapRef ?: return@launch
                             if (isActiveTracking) {
                                 viewModel.locationService.stopActiveTracking()
+                                alertService.stopAlerts()
                                 viewModel.locationService.startPassiveTracking()
 
                                 map.animateCamera(
@@ -347,15 +379,29 @@ fun MapScreen(
 
                                 val loc = viewModel.locationService.location.value
                                 if (loc != null) {
+                                    alertService.checkProximity(loc)
+                                    val currentLoc = viewModel.locationService.location.value
+                                    isTransitioningToTracking = true
                                     map.animateCamera(
                                         CameraUpdateFactory.newCameraPosition(
                                             CameraPosition.Builder()
-                                                .target(LatLng(loc.latitude, loc.longitude))
-                                                .zoom(18.0)
-                                                .tilt(45.0)
+                                                .target(currentLoc?.let { LatLng(it.latitude, it.longitude) }
+                                                    ?: map.cameraPosition.target)
+                                                .zoom(15.0)
+                                                .tilt(0.0)
                                                 .bearing(userHeading)
                                                 .build()
-                                        ), 1200
+                                        ), 500,
+
+                                        object : org.maplibre.android.maps.MapLibreMap.CancelableCallback {
+                                            override fun onCancel() {
+                                                isTransitioningToTracking = false
+                                            }
+                                            override fun onFinish() {
+
+                                                isTransitioningToTracking = false
+                                            }
+                                        }
                                     )
                                 }
                             }
@@ -386,18 +432,16 @@ fun MapScreen(
 
                 FilterButton(
                     text = "AKTIVNI",
-                    isActive = selectedFilter == "active",
+                    isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
                     onClick = {
-                        selectedFilter = "active"
                         viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
                     }
                 )
                 FilterButton(
                     text = "DANAS",
-                    isActive = selectedFilter == "today",
+                    isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
                     enabled = !isActiveTracking,
                     onClick = {
-                        selectedFilter = "today"
                         viewModel.setFilter(MapViewModel.RadarFilter.TODAY)
                     }
                 )
@@ -406,139 +450,12 @@ fun MapScreen(
             selectedRadar?.let { radar ->
                 RadarInfoCard(
                     radar = radar,
-                    onDismiss = { selectedRadar = null },
+                    onDismiss = { viewModel.selectRadar(null) },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(16.dp)
                 )
             }
         }
-    }
-}
-
-private fun createCircleFeature(
-    lng: Double,
-    lat: Double,
-    radiusMeters: Double,
-    points: Int = 64
-): org.maplibre.geojson.Feature {
-    val km = radiusMeters / 1000.0
-    val distanceX = km / (111.320 * Math.cos(Math.toRadians(lat)))
-    val distanceY = km / 110.574
-
-    val coordinates = mutableListOf<org.maplibre.geojson.Point>()
-    for (i in 0 until points) {
-        val theta = (i.toDouble() / points) * (2 * Math.PI)
-        val x = distanceX * Math.cos(theta)
-        val y = distanceY * Math.sin(theta)
-        coordinates.add(org.maplibre.geojson.Point.fromLngLat(lng + x, lat + y))
-    }
-    coordinates.add(coordinates[0])
-
-    return org.maplibre.geojson.Feature.fromGeometry(
-        org.maplibre.geojson.Polygon.fromLngLats(listOf(coordinates))
-    )
-}
-
-private fun createUserBitmap(context: android.content.Context): Bitmap {
-    val drawable = context.getDrawable(R.drawable.user_marker)
-    if (drawable != null) {
-        val size = 80
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        drawable.setBounds(0, 0, size, size)
-        drawable.draw(canvas)
-        return bmp
-    }
-
-    val size = 60
-    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
-
-    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#4CAF50")
-        style = Paint.Style.FILL
-    }
-    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-    }
-    val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.FILL
-    }
-
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5, bgPaint)
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5, borderPaint)
-
-    val path = android.graphics.Path()
-    path.moveTo(size / 2f, 8f)
-    path.lineTo(size / 2f - 10f, size / 2f + 10f)
-    path.lineTo(size / 2f, size / 2f)
-    path.lineTo(size / 2f + 10f, size / 2f + 10f)
-    path.close()
-    canvas.drawPath(path, arrowPaint)
-
-    return bmp
-}
-
-private fun createRadarBitmap(context: android.content.Context, isStacionarni: Boolean): Bitmap {
-    val drawableId = if (isStacionarni) R.drawable.stac_radar else R.drawable.active_radar
-    val drawable = androidx.core.content.ContextCompat.getDrawable(context, drawableId)
-
-    if (drawable != null) {
-        val size = 96
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        drawable.setBounds(0, 0, size, size)
-        drawable.draw(canvas)
-        return bmp
-    }
-
-    val size = 60
-    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
-    val bgColor = if (isStacionarni) Color.parseColor("#1565C0") else Color.parseColor("#1E88E5")
-    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = bgColor
-        style = Paint.Style.FILL
-    }
-    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-    }
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5, bgPaint)
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5, borderPaint)
-    return bmp
-}
-@Composable
-private fun FilterButton(
-    text: String,
-    isActive: Boolean,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (isActive)
-                androidx.compose.ui.graphics.Color(0xFF4D7079)
-            else
-                androidx.compose.ui.graphics.Color(0xFF1E2736),
-            disabledContainerColor = androidx.compose.ui.graphics.Color(0xFF1E2736).copy(alpha = 0.5f)
-        ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
-        contentPadding = PaddingValues(horizontal = 25.dp, vertical = 15.dp),
-        modifier = Modifier.defaultMinSize(minWidth = 120.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = androidx.compose.ui.graphics.Color.White
-        )
     }
 }
