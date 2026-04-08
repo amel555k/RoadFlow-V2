@@ -1,16 +1,8 @@
 package com.amko.roadflow.presentation.components
 
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DrawerState
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-
 
 @Composable
 fun Sidebar(
@@ -22,8 +14,7 @@ fun Sidebar(
         drawerState = drawerState,
         gesturesEnabled = false,
         drawerContent = {
-            ModalDrawerSheet (drawerContainerColor=Color(0xFF2E2E5E)){
-
+            ModalDrawerSheet(drawerContainerColor = Color(0xFF2E2E5E)) {
                 NavigationDrawerItem(
                     label = { Text("Lista", color = Color.White) },
                     selected = false,
@@ -33,6 +24,11 @@ fun Sidebar(
                     label = { Text("Mape", color = Color.White) },
                     selected = false,
                     onClick = { onNavigate("map") }
+                )
+                NavigationDrawerItem(
+                    label = { Text("Postavke", color = Color.White) },
+                    selected = false,
+                    onClick = { onNavigate("settings") }
                 )
             }
         }

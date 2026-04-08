@@ -12,6 +12,9 @@ import androidx.navigation.compose.rememberNavController
 import com.amko.roadflow.presentation.components.Sidebar
 import com.amko.roadflow.presentation.screens.MainScreen
 import com.amko.roadflow.presentation.screens.MapScreen
+import com.amko.roadflow.presentation.screens.SettingsScreen
+import com.amko.roadflow.presentation.screens.ThemeSettingsScreen
+import com.amko.roadflow.presentation.screens.WidgetSettingsScreen
 import com.amko.roadflow.ui.theme.RoadFlowTheme
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
@@ -53,6 +56,23 @@ class MainActivity : ComponentActivity() {
                             MapScreen(onOpenDrawer = {
                                 scope.launch { drawerState.open() }
                             })
+                        }
+                        composable("settings") {
+                            SettingsScreen(
+                                onBack = { navController.popBackStack() },
+                                onNavigateToTheme = { navController.navigate("theme_settings") },
+                                onNavigateToWidget = { navController.navigate("widget_settings") }
+                            )
+                        }
+                        composable("theme_settings") {
+                            ThemeSettingsScreen(
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("widget_settings") {
+                            WidgetSettingsScreen(
+                                onBack = { navController.popBackStack() }
+                            )
                         }
                     }
                 }

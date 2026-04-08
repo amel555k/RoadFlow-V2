@@ -16,13 +16,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amko.roadflow.domain.model.Canton
 import com.amko.roadflow.domain.model.RadarData
 import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.presentation.viewmodel.RadarListItem
 import java.time.format.DateTimeFormatter
+import com.amko.roadflow.presentation.components.NoConnectionDialog
 
 @Composable
 fun MainScreen(onOpenDrawer: () -> Unit) {
@@ -215,36 +215,11 @@ fun MainScreen(onOpenDrawer: () -> Unit) {
         }
 
         if (showNoInternet) {
-            Dialog(onDismissRequest = { viewModel.showNoInternet.value = false }) {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text(
-                            text = "Nema internet konekcije",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp,
-                            color = Color(0xFF212143)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Molimo provjerite da li su uključeni WiFi ili mobilni podaci.",
-                            fontSize = 14.sp,
-                            color = Color.DarkGray
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { viewModel.showNoInternet.value = false },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212143)),
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text("U REDU", color = Color.White)
-                        }
-                    }
-                }
-            }
+            NoConnectionDialog(
+                title = "Nema internet konekcije",
+                message = "Molimo provjerite da li su uključeni WiFi ili mobilni podaci.",
+                onDismiss = { viewModel.showNoInternet.value = false }
+            )
         }
     }
 }

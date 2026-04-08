@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">RoadFlow</string>
+    <string name="widget_description">Prikazuje radare za omiljene gradove</string>
 </resources>

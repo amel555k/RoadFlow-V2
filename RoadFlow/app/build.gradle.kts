@@ -68,4 +68,6 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("org.maplibre.gl:android-plugin-annotation-v9:3.0.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.glance:glance-material3:1.1.0")
 }

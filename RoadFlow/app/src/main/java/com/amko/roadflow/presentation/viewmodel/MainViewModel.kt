@@ -10,14 +10,11 @@ import com.amko.roadflow.data.local.RadarParser
 import com.amko.roadflow.domain.model.Canton
 import com.amko.roadflow.domain.model.RadarData
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed class RadarListItem {
     data class CityHeader(val city: String) : RadarListItem()
@@ -52,7 +49,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    init { loadData() }
+    init {
+        viewModelScope.launch {
+            isLoading.collect { android.util.Log.d("ROADFLOW", "isLoading=$it uiList.size=${_uiList.value.size}") }
+        }
+        loadData()
+    }
 
     fun filterForCanton(all: List<RadarData>, canton: Canton?): List<RadarData> {
         if (canton == null) return all
@@ -81,11 +83,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _allRadars.value = partialRadars
                     parser.updateCache(partialRadars)
                     if (firstEmit) {
-                        launch(Dispatchers.Default) {
-                            val filtered = filterForCanton(partialRadars, selectedCanton.value)
-                            _displayedRadars.value = filtered
-                            _uiList.value = buildUiList(filtered)
+                        val filtered = withContext(Dispatchers.Default) {
+                            filterForCanton(partialRadars, selectedCanton.value)
                         }
+                        _displayedRadars.value = filtered
+                        _uiList.value = buildUiList(filtered)
                         currentDate.value = LocalDate.now()
                         isLoading.value = false
                         firstEmit = false
