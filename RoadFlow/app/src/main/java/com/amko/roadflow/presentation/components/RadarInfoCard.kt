@@ -24,45 +24,48 @@ fun RadarInfoCard(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF212143)),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(24.dp)) {
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 40.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = radar.city,
                     color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
                 )
                 TextButton(onClick = onDismiss) {
-                    Text("✕", color = Color.White)
+                    Text("✕", color = Color.White, fontSize = 24.sp)
                 }
             }
 
             if (radar.city.trim().lowercase() != radar.location.trim().lowercase()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = radar.location,
                     color = Color.White,
-                    fontSize = 14.sp
+                    fontSize = 18.sp
                 )
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = radar.time,
                 color = Color.White,
-                fontSize = 14.sp
+                fontSize = 18.sp
             )
-
             if (radar.speedLimit != null) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "OGRANIČENJE: ${radar.speedLimit} km/h",
                     color = Color.White,
-                    fontSize = 14.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }

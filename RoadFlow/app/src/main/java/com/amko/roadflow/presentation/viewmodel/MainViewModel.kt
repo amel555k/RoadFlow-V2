@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
 
 sealed class RadarListItem {
     data class CityHeader(val city: String) : RadarListItem()
@@ -37,6 +38,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiList = MutableStateFlow<List<RadarListItem>>(emptyList())
     val uiList: StateFlow<List<RadarListItem>> = _uiList
+    private var filteringJob: Job? = null
 
     private fun buildUiList(radars: List<RadarData>): List<RadarListItem> {
         val grouped = radars.groupBy { it.city }
@@ -67,10 +69,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectCanton(canton: Canton?) {
         selectedCanton.value = canton
-        viewModelScope.launch(Dispatchers.Default) {
+
+        filteringJob?.cancel()
+
+        filteringJob = viewModelScope.launch(Dispatchers.Default) {
             val filtered = filterForCanton(_allRadars.value, canton)
-            _displayedRadars.value = filtered
-            _uiList.value = buildUiList(filtered)
+            withContext(Dispatchers.Main) {
+                _displayedRadars.value = filtered
+                _uiList.value = buildUiList(filtered)
+            }
         }
     }
 
@@ -82,6 +89,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 parser.parseAllLocationsAsFlow().collect { partialRadars ->
                     _allRadars.value = partialRadars
                     parser.updateCache(partialRadars)
+
                     if (firstEmit) {
                         val filtered = withContext(Dispatchers.Default) {
                             filterForCanton(partialRadars, selectedCanton.value)
@@ -92,11 +100,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isLoading.value = false
                         firstEmit = false
                     } else {
-                        launch(Dispatchers.Default) {
+                        filteringJob?.cancel()
+
+                        filteringJob = viewModelScope.launch(Dispatchers.Default) {
                             val filtered = filterForCanton(partialRadars, selectedCanton.value)
                             if (filtered != _displayedRadars.value) {
-                                _displayedRadars.value = filtered
-                                _uiList.value = buildUiList(filtered)
+                                withContext(Dispatchers.Main) {
+                                    _displayedRadars.value = filtered
+                                    _uiList.value = buildUiList(filtered)
+                                }
                             }
                         }
                     }
@@ -104,11 +116,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: NoInternetWithCacheException) {
                 _allRadars.value = e.cachedRadars
                 parser.updateCache(e.cachedRadars)
-                launch(Dispatchers.Default) {
+
+                filteringJob?.cancel()
+                filteringJob = viewModelScope.launch(Dispatchers.Default) {
                     val filtered = filterForCanton(e.cachedRadars, selectedCanton.value)
-                    _displayedRadars.value = filtered
-                    _uiList.value = buildUiList(filtered)
+                    withContext(Dispatchers.Main) {
+                        _displayedRadars.value = filtered
+                        _uiList.value = buildUiList(filtered)
+                    }
                 }
+
                 currentDate.value = LocalDate.now()
                 showNoInternet.value = true
                 isLoading.value = false

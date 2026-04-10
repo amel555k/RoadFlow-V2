@@ -38,7 +38,7 @@ fun SettingsScreen(
             )
             Spacer(modifier = Modifier.width(16.dp))
             Text(
-                text = "Settings",
+                text = "Postavke",
                 color = Color.White,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold

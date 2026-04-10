@@ -383,9 +383,11 @@ fun MapScreen(
 
                                 val map = mapRef ?: return@launch
                                 if (isActiveTracking) {
+
                                     viewModel.locationService.stopActiveTracking()
                                     alertService.stopAlerts()
-                                    viewModel.locationService.startPassiveTracking()
+
+                                    delay(100)
 
                                     map.animateCamera(
                                         CameraUpdateFactory.newCameraPosition(
@@ -396,6 +398,10 @@ fun MapScreen(
                                                 .build()
                                         ), 800
                                     )
+
+                                    delay(800)
+                                    viewModel.locationService.startPassiveTracking()
+
                                 } else {
                                     viewModel.locationService.stopPassiveTracking()
                                     viewModel.locationService.startActiveTracking()

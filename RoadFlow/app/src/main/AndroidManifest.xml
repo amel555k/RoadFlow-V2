@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+
     <application
         android:name=".RoadFlowApp"
         android:allowBackup="true"
@@ -21,7 +22,9 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.RoadFlow">
+            android:theme="@style/Theme.RoadFlow"
+            android:configChanges="orientation|screenSize|screenLayout|uiMode">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -40,6 +43,7 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/favorite_cities_widget_info" />
+
         </receiver>
     </application>
 

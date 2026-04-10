@@ -25,9 +25,10 @@ import java.time.format.DateTimeFormatter
 import com.amko.roadflow.presentation.components.NoConnectionDialog
 
 @Composable
-fun MainScreen(onOpenDrawer: () -> Unit) {
-    val viewModel: MainViewModel = viewModel()
-
+fun MainScreen(
+    viewModel: MainViewModel,
+    onOpenDrawer: () -> Unit
+) {
     val flatList by viewModel.uiList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedCanton by viewModel.selectedCanton.collectAsState()

@@ -5,9 +5,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.amko.roadflow.presentation.components.Sidebar
 import com.amko.roadflow.presentation.screens.MainScreen
@@ -15,6 +18,7 @@ import com.amko.roadflow.presentation.screens.MapScreen
 import com.amko.roadflow.presentation.screens.SettingsScreen
 import com.amko.roadflow.presentation.screens.ThemeSettingsScreen
 import com.amko.roadflow.presentation.screens.WidgetSettingsScreen
+import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.ui.theme.RoadFlowTheme
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
@@ -22,7 +26,6 @@ import org.maplibre.android.MapLibre
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         MapLibre.getInstance(this)
 
         setContent {
@@ -30,16 +33,17 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
+                val mainViewModel: MainViewModel = viewModel()
+
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
 
                 Sidebar(
+                    currentRoute = currentRoute,
                     onNavigate = { route ->
-                        scope.launch {
-                            drawerState.close()
-                        }
+                        scope.launch { drawerState.close() }
                         navController.navigate(route) {
-                            popUpTo(navController.graph.startDestinationId) {
-                                saveState = true
-                            }
+                            popUpTo(navController.graph.startDestinationId) { saveState = true }
                             launchSingleTop = true
                             restoreState = true
                         }
@@ -48,14 +52,13 @@ class MainActivity : ComponentActivity() {
                 ) {
                     NavHost(navController = navController, startDestination = "main") {
                         composable("main") {
-                            MainScreen(onOpenDrawer = {
-                                scope.launch { drawerState.open() }
-                            })
+                            MainScreen(
+                                viewModel = mainViewModel,
+                                onOpenDrawer = { scope.launch { drawerState.open() } }
+                            )
                         }
                         composable("map") {
-                            MapScreen(onOpenDrawer = {
-                                scope.launch { drawerState.open() }
-                            })
+                            MapScreen(onOpenDrawer = { scope.launch { drawerState.open() } })
                         }
                         composable("settings") {
                             SettingsScreen(
@@ -65,12 +68,11 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("theme_settings") {
-                            ThemeSettingsScreen(
-                                onBack = { navController.popBackStack() }
-                            )
+                            ThemeSettingsScreen(onBack = { navController.popBackStack() })
                         }
                         composable("widget_settings") {
                             WidgetSettingsScreen(
+                                mainViewModel = mainViewModel,
                                 onBack = { navController.popBackStack() }
                             )
                         }

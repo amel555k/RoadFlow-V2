@@ -80,6 +80,12 @@ object RadarConfig {
         RadarCoordinate("M-5 Bila", 44.180971, 17.752092, speedLimit = 50),
         RadarCoordinate("Stacionarni Radar - ul. Šehida, Travnik", 44.227014, 17.664612, speedLimit = 50, stacionaran = true),
         RadarCoordinate("Stacionarni Radar - Vitez (kod Impregnacije)", 44.151029, 17.805830, speedLimit = 50, stacionaran = true),
+        RadarCoordinate("Stacionarni Radar - Novi Travnik M16.4", 44.192272, 17.707698, speedLimit = 60, stacionaran = true),
+        RadarCoordinate("Stacionarni Radar - Turbe (kod benzinske INA)", 44.239581, 17.574770, speedLimit = 50, stacionaran = true),
+        RadarCoordinate("Stacionarni Radar - Oborci", 44.194250, 17.421098, speedLimit = 50, stacionaran = true),
+        RadarCoordinate("Stacionarni Radar - Busovača", 44.098984, 17.8807316, speedLimit = 50, stacionaran = true),
+        RadarCoordinate("Stacionarni Radar - Brnjaci", 43.913573, 18.127666, speedLimit = 40, stacionaran = true)
+
     )
 
     fun findCoordinatesByName(locationName: String): List<RadarCoordinate> {
@@ -121,7 +127,6 @@ object RadarConfig {
             contains(n, "guca gora") -> "Guča Gora"
             contains(n, "mosor") -> "Mosor"
             else -> {
-                println("[RadarConfig] NIJE PREPOZNATO: '$raw'")
                 null
             }
         }

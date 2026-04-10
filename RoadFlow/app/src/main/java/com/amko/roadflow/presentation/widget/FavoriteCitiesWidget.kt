@@ -1,7 +1,7 @@
 package com.amko.roadflow.presentation.widget
 
 import android.content.Context
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -9,11 +9,14 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalContext
+import androidx.glance.LocalGlanceId
+import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
+import androidx.glance.action.mutableActionParametersOf
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.lazy.LazyColumn
-import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.*
@@ -25,62 +28,44 @@ import com.amko.roadflow.R
 import com.amko.roadflow.data.local.FirebaseService
 import com.amko.roadflow.data.local.RadarParser
 import com.amko.roadflow.domain.model.RadarData
-import java.io.File
-import java.time.LocalDate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.glance.appwidget.action.ActionCallback
+import android.content.Intent
 
 class FavoriteCitiesWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val sharedPrefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
-
-        if (!sharedPrefs.contains("cities_initialized")) {
-            sharedPrefs.edit()
-                .putString("city_1", "Travnik")
-                .putString("city_2", "Vitez")
-                .putBoolean("cities_initialized", true)
-                .apply()
-        }
-
-        val city1 = sharedPrefs.getString("city_1", "Travnik") ?: "Travnik"
-        val city2 = sharedPrefs.getString("city_2", "Vitez") ?: "Vitez"
-
-        val parser = RadarParser(context, FirebaseService())
-        val filePath = File(context.filesDir, "lista.txt")
-        val todayDate = LocalDate.now()
-
-        val fileIsValid = filePath.exists() &&
-                LocalDate.ofEpochDay(filePath.lastModified() / 86400000L) == todayDate
-
-        val allRadars = if (fileIsValid) {
-            try {
-                parser.getActiveRadarsAsync()
-            } catch (e: Exception) {
-                emptyList()
-            }
-        } else {
-            try {
-                var lastEmit = emptyList<RadarData>()
-                parser.parseAllLocationsAsFlow().collect { lastEmit = it }
-                lastEmit
-            } catch (e: Exception) {
-                try {
-                    parser.getActiveRadarsAsync()
-                } catch (e2: Exception) {
-                    emptyList()
-                }
-            }
-        }
-
-        val data1 = allRadars.filter { it.city == city1 }
-        val data2 = allRadars.filter { it.city == city2 }
-
         provideContent {
-            MyWidgetUI(listOf(city1 to data1, city2 to data2))
+            WidgetContent()
         }
     }
 
     @Composable
-    private fun MyWidgetUI(citiesData: List<Pair<String, List<RadarData>>>) {
+    private fun WidgetContent() {
+        val context = LocalContext.current
+        val glanceId = LocalGlanceId.current
+        val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+
+        val city1 = prefs.getString("favorite_city_1", null) ?: "Travnik"
+        val city2 = prefs.getString("favorite_city_2", null) ?: "Vitez"
+        val isLoading = prefs.getBoolean("widget_loading", false)
+        val noInternetError = prefs.getBoolean("no_internet_error", false)
+        val lastUpdateTime = prefs.getString("widget_last_update", "") ?: ""
+
+        var radarDataCity1 by remember { mutableStateOf<List<RadarData>>(emptyList()) }
+        var radarDataCity2 by remember { mutableStateOf<List<RadarData>>(emptyList()) }
+
+        LaunchedEffect(city1, city2) {
+            val allData = loadRadarDataForCities(context, city1, city2)
+            radarDataCity1 = allData.filter { it.city == city1 }
+            radarDataCity2 = allData.filter { it.city == city2 }
+
+            if (allData.isEmpty() && !isLoading && lastUpdateTime.isEmpty()) {
+                WidgetRefreshCallback().onAction(context, glanceId, mutableActionParametersOf())
+            }
+        }
+
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
@@ -99,7 +84,16 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
                         fontSize = 18.sp
                     ),
                     modifier = GlanceModifier.defaultWeight()
+                        .clickable(actionRunCallback<OpenAppCallback>())
                 )
+
+                if (isLoading) {
+                    Text(
+                        text = "...",
+                        style = TextStyle(color = ColorProvider(Color.White), fontSize = 14.sp),
+                        modifier = GlanceModifier.padding(end = 8.dp)
+                    )
+                }
 
                 Image(
                     provider = ImageProvider(R.drawable.refresh),
@@ -112,17 +106,47 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
 
             Spacer(modifier = GlanceModifier.height(8.dp))
 
-            LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-                items(citiesData) { (cityName, radars) ->
-                    CitySection(cityName, radars)
-                    Spacer(modifier = GlanceModifier.height(12.dp))
+            if (noInternetError && radarDataCity1.isEmpty() && radarDataCity2.isEmpty()) {
+                Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Provjerite internet konekciju",
+                        style = TextStyle(color = ColorProvider(Color.Red), fontSize = 14.sp)
+                    )
+                }
+            } else if (city1 == null || city2 == null) {
+                Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Odaberi gradove u aplikaciji",
+                        style = TextStyle(color = ColorProvider(Color.Gray), fontSize = 14.sp)
+                    )
+                }
+            } else {
+                LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+                    item {
+                        CitySection(city1, radarDataCity1, noInternetError)
+                    }
+                    item {
+                        Spacer(modifier = GlanceModifier.height(12.dp))
+                    }
+                    item {
+                        CitySection(city2, radarDataCity2, noInternetError)
+                    }
+                    if (lastUpdateTime.isNotEmpty()) {
+                        item {
+                            Spacer(modifier = GlanceModifier.height(8.dp))
+                            Text(
+                                text = "Ažurirano: $lastUpdateTime",
+                                style = TextStyle(color = ColorProvider(Color.Gray), fontSize = 8.sp)
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 
     @Composable
-    private fun CitySection(cityName: String, radars: List<RadarData>) {
+    private fun CitySection(cityName: String, radars: List<RadarData>, hasError: Boolean) {
         Column(
             modifier = GlanceModifier
                 .fillMaxWidth()
@@ -142,7 +166,7 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
 
             if (radars.isEmpty()) {
                 Text(
-                    text = "Nema podataka",
+                    text = if (hasError) "Greška pri učitavanju" else "Nema aktivnih radara",
                     style = TextStyle(
                         color = ColorProvider(Color.Gray),
                         fontSize = 14.sp
@@ -168,6 +192,32 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
                     }
                 }
             }
+        }
+    }
+
+    private suspend fun loadRadarDataForCities(context: Context, city1: String, city2: String): List<RadarData> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val parser = RadarParser(context, FirebaseService())
+                val allRadars = parser.getActiveRadarsAsync()
+                allRadars.filter { (it.city == city1 || it.city == city2) && it.time != "INFO" }
+                    .sortedBy { it.city }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+    }
+}
+class OpenAppCallback : ActionCallback {
+    override suspend fun onAction(
+        context: Context,
+        glanceId: GlanceId,
+        parameters: ActionParameters
+    ) {
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        if (intent != null) {
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            context.startActivity(intent)
         }
     }
 }
