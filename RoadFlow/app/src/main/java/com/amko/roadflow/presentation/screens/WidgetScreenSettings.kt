@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.amko.roadflow.R
 import com.amko.roadflow.data.local.RadarConfig
 import com.amko.roadflow.presentation.viewmodel.MainViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @Composable
 fun WidgetSettingsScreen(
@@ -115,15 +116,16 @@ fun WidgetSettingsScreen(
 
             Button(
                 onClick = {
-                    val prefs = mainViewModel.getApplication<android.app.Application>()
-                        .getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
+                    val context = mainViewModel.getApplication<android.app.Application>()
+                    val prefs = context.getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
                     prefs.edit().apply {
                         putString("favorite_city_1", selectedCities.value.first)
                         putString("favorite_city_2", selectedCities.value.second)
                         apply()
                     }
 
-                    val context = mainViewModel.getApplication<android.app.Application>()
+                    WidgetStateManager.updateCities(selectedCities.value.first, selectedCities.value.second)
+
                     val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
                     val componentName = android.content.ComponentName(
                         context,
@@ -131,9 +133,10 @@ fun WidgetSettingsScreen(
                     )
                     val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
                     if (appWidgetIds.isNotEmpty()) {
-                        val intent = android.content.Intent(context, com.amko.roadflow.presentation.widget.FavoriteCitiesWidgetReceiver::class.java)
-                        intent.action = android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                        intent.putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, appWidgetIds)
+                        val intent = android.content.Intent(context, com.amko.roadflow.presentation.widget.FavoriteCitiesWidgetReceiver::class.java).apply {
+                            action = android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE
+                            putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, appWidgetIds)
+                        }
                         context.sendBroadcast(intent)
                     }
 
@@ -205,5 +208,15 @@ fun CityDropdown(
                 )
             }
         }
+    }
+}
+
+object WidgetStateManager {
+    val city1Flow = MutableStateFlow("Travnik")
+    val city2Flow = MutableStateFlow("Vitez")
+
+    fun updateCities(newCity1: String, newCity2: String) {
+        city1Flow.value = newCity1
+        city2Flow.value = newCity2
     }
 }

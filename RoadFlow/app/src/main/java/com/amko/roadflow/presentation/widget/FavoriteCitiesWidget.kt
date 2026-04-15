@@ -1,6 +1,7 @@
 package com.amko.roadflow.presentation.widget
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -13,8 +14,8 @@ import androidx.glance.LocalContext
 import androidx.glance.LocalGlanceId
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
-import androidx.glance.action.mutableActionParametersOf
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.provideContent
@@ -28,10 +29,10 @@ import com.amko.roadflow.R
 import com.amko.roadflow.data.local.FirebaseService
 import com.amko.roadflow.data.local.RadarParser
 import com.amko.roadflow.domain.model.RadarData
+import com.amko.roadflow.presentation.screens.WidgetStateManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
-import androidx.glance.appwidget.action.ActionCallback
-import android.content.Intent
 
 class FavoriteCitiesWidget : GlanceAppWidget() {
 
@@ -44,11 +45,14 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
     @Composable
     private fun WidgetContent() {
         val context = LocalContext.current
-        val glanceId = LocalGlanceId.current
         val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
 
-        val city1 = prefs.getString("favorite_city_1", null) ?: "Travnik"
-        val city2 = prefs.getString("favorite_city_2", null) ?: "Vitez"
+        val city1State = WidgetStateManager.city1Flow.collectAsState()
+        val city2State = WidgetStateManager.city2Flow.collectAsState()
+
+        var city1 by remember { mutableStateOf(city1State.value) }
+        var city2 by remember { mutableStateOf(city2State.value) }
+
         val isLoading = prefs.getBoolean("widget_loading", false)
         val noInternetError = prefs.getBoolean("no_internet_error", false)
         val lastUpdateTime = prefs.getString("widget_last_update", "") ?: ""
@@ -60,9 +64,17 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
             val allData = loadRadarDataForCities(context, city1, city2)
             radarDataCity1 = allData.filter { it.city == city1 }
             radarDataCity2 = allData.filter { it.city == city2 }
+        }
 
-            if (allData.isEmpty() && !isLoading && lastUpdateTime.isEmpty()) {
-                WidgetRefreshCallback().onAction(context, glanceId, mutableActionParametersOf())
+        LaunchedEffect(Unit) {
+            WidgetStateManager.city1Flow.collectLatest { newCity1 ->
+                city1 = newCity1
+            }
+        }
+
+        LaunchedEffect(Unit) {
+            WidgetStateManager.city2Flow.collectLatest { newCity2 ->
+                city2 = newCity2
             }
         }
 
@@ -111,13 +123,6 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
                     Text(
                         text = "Provjerite internet konekciju",
                         style = TextStyle(color = ColorProvider(Color.Red), fontSize = 14.sp)
-                    )
-                }
-            } else if (city1 == null || city2 == null) {
-                Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Odaberi gradove u aplikaciji",
-                        style = TextStyle(color = ColorProvider(Color.Gray), fontSize = 14.sp)
                     )
                 }
             } else {
@@ -208,6 +213,7 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
         }
     }
 }
+
 class OpenAppCallback : ActionCallback {
     override suspend fun onAction(
         context: Context,
