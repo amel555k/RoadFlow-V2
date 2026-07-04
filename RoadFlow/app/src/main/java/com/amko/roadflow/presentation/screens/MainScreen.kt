@@ -94,6 +94,7 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF2E2E5E))
+                    .clickable { isDropdownOpen = !isDropdownOpen }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -107,11 +108,9 @@ fun MainScreen(
                 Text(
                     text = if (isDropdownOpen) "▲" else "▼",
                     color = Color.White,
-                    fontSize = 14.sp,
-                    modifier = Modifier.clickable { isDropdownOpen = !isDropdownOpen }
+                    fontSize = 14.sp
                 )
             }
-
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = Color(0xFF212143))

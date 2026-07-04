@@ -52,6 +52,14 @@ fun Sidebar(
                 )
 
                 NavigationDrawerItem(
+                    label = { Text("Historija") },
+                    selected = currentRoute == "history",
+                    onClick = { onNavigate("history") },
+                    colors = drawerItemColors,
+                    shape = RectangleShape
+                )
+
+                NavigationDrawerItem(
                     label = { Text("Postavke") },
                     selected = currentRoute == "settings",
                     onClick = { onNavigate("settings") },

@@ -22,6 +22,8 @@ import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.ui.theme.RoadFlowTheme
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
+import com.amko.roadflow.presentation.screens.HistoryScreen
+import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +36,7 @@ class MainActivity : ComponentActivity() {
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
                 val mainViewModel: MainViewModel = viewModel()
+                val historyViewModel: HistoryViewModel = viewModel()
 
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
@@ -54,6 +57,12 @@ class MainActivity : ComponentActivity() {
                         composable("main") {
                             MainScreen(
                                 viewModel = mainViewModel,
+                                onOpenDrawer = { scope.launch { drawerState.open() } }
+                            )
+                        }
+                        composable("history") {
+                            HistoryScreen(
+                                viewModel = historyViewModel,
                                 onOpenDrawer = { scope.launch { drawerState.open() } }
                             )
                         }

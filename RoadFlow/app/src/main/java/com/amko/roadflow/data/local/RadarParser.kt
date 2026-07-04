@@ -117,18 +117,22 @@ class RadarParser(
 
             emit(uniqueRadars)
 
-            val sb = StringBuilder()
-            uniqueRadars.groupBy { it.city }.forEach { (city, radars) ->
-                sb.appendLine("=== $city ===")
-                radars.forEach { sb.appendLine("${it.time} - ${it.location}") }
-                sb.appendLine()
-            }
-            saveToFileAsync(sb.toString())
+            val hasActualData = uniqueRadars.any { it.time != "INFO" }
 
-            if (uniqueRadars.any { it.time != "INFO" }) {
+            if (hasActualData) {
+                val sb = StringBuilder()
+                uniqueRadars.groupBy { it.city }.forEach { (city, radars) ->
+                    sb.appendLine("=== $city ===")
+                    radars.forEach { sb.appendLine("${it.time} - ${it.location}") }
+                    sb.appendLine()
+                }
+                saveToFileAsync(sb.toString())
                 firebaseService.saveRadarsToHistoryAsync(todayDate, uniqueRadars)
+            } else {
+                println("[RadarParser] Podaci nisu sačuvani jer nema aktivnih radara ili internet nije dostupan.")
             }
         }.flowOn(Dispatchers.IO)
+
     private suspend fun parseSingleIdWithErrorHandlingAsync(baseCityName: String, id: Int, mapEnabled: Boolean): List<RadarData> {
         return try {
             parseSingleIdAsync(baseCityName, id, mapEnabled)

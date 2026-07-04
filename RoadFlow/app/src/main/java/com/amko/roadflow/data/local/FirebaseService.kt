@@ -17,6 +17,7 @@ class FirebaseService {
 
     companion object {
         val FIREBASE_BASE_URL = "${Secrets.FIREBASE_BASE_URL}radari-sbk"
+        val HISTORY_BASE_URL = "${Secrets.FIREBASE_BASE_URL}history"
     }
 
     private val client = OkHttpClient()
@@ -87,7 +88,7 @@ class FirebaseService {
                     )
 
                     if (configLoc.mapEnabled) {
-                        val coords = RadarConfig.findCoordinatesByName(locationPart)
+                        val coords = RadarConfig.findCoordinatesByName(locationPart, city = cityName)
                         if (coords.isNotEmpty()) {
                             val first = coords.first()
                             radars.add(
@@ -108,6 +109,69 @@ class FirebaseService {
             }
         } catch (e: Exception) {
             println("[FirebaseService] Error: ${e.message}")
+        }
+
+        radars
+    }
+
+    suspend fun getHistoryRadarsAsync(date: LocalDate): List<RadarData> = withContext(Dispatchers.IO) {
+        val radars = mutableListOf<RadarData>()
+        val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        val url = getAuthenticatedUrl("$HISTORY_BASE_URL/$dateStr.json")
+
+        try {
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext radars
+
+            val json = response.body?.string()
+            if (json.isNullOrBlank() || json == "null") return@withContext radars
+
+            val rootObj = JSONObject(json)
+
+            rootObj.keys().forEach { cityName ->
+                val configLoc = RadarConfig.locations.firstOrNull { it.name == cityName }
+                    ?: return@forEach
+
+                val itemsArray = rootObj.getJSONArray(cityName)
+                for (i in 0 until itemsArray.length()) {
+                    val itemObj = itemsArray.getJSONObject(i)
+                    val item = FirebaseRadarItem(
+                        time = itemObj.optString("Time", ""),
+                        location = itemObj.optString("Location", "")
+                    )
+
+                    val locationPart = normalizeFirebaseLocation(item.location)
+
+                    val radar = RadarData(
+                        city = cityName,
+                        time = item.time,
+                        location = locationPart,
+                        pageDate = date.atStartOfDay()
+                    )
+
+                    if (configLoc.mapEnabled) {
+                        val coords = RadarConfig.findCoordinatesByName(locationPart, city = cityName)
+                        if (coords.isNotEmpty()) {
+                            val first = coords.first()
+                            radars.add(
+                                radar.copy(
+                                    coordinate = first,
+                                    latitude = first.latitude,
+                                    longitude = first.longitude,
+                                    speedLimit = first.speedLimit
+                                )
+                            )
+                        } else {
+                            radars.add(radar)
+                        }
+                    } else {
+                        radars.add(radar)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            println("[FirebaseService] History error: ${e.message}")
         }
 
         radars
