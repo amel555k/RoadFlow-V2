@@ -20,7 +20,13 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
     var selectedTheme by remember { mutableStateOf("System default") }
     val themes = listOf("Light mode", "Dark mode", "System default")
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFD9D9D9))) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFD9D9D9))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

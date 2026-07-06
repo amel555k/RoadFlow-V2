@@ -13,11 +13,11 @@ object RadarConfig {
         RadarLocation("Donji Vakuf", listOf(419, 416), Canton.Srednjobosanski, fromFirebase = true),
         RadarLocation("Bugojno", listOf(402, 332), Canton.Srednjobosanski, fromFirebase = true),
         RadarLocation("Gornji Vakuf-Uskoplje", listOf(401, 331), Canton.Srednjobosanski, fromFirebase = true),
-        RadarLocation("Novi Travnik", listOf(420, 333), Canton.Srednjobosanski, fromFirebase = true),
+        RadarLocation("Novi Travnik", listOf(420, 333), Canton.Srednjobosanski,mapEnabled = true, fromFirebase = true),
         RadarLocation("Busovača", listOf(421, 334), Canton.Srednjobosanski, fromFirebase = true),
         RadarLocation("Kiseljak", listOf(422, 335), Canton.Srednjobosanski, fromFirebase = true),
         RadarLocation("Kreševo", listOf(423, 336), Canton.Srednjobosanski, mapEnabled = true,fromFirebase = true),
-        RadarLocation("Jajce", listOf(424, 337), Canton.Srednjobosanski, fromFirebase = true),
+        RadarLocation("Jajce", listOf(424, 337), Canton.Srednjobosanski, mapEnabled=true,fromFirebase = true),
         RadarLocation("Zenica", listOf(323, 393), Canton.ZenickoDobojski, mapEnabled = true),
         RadarLocation("Tešanj", listOf(328, 399), Canton.ZenickoDobojski),
         RadarLocation("Maglaj", listOf(327, 397), Canton.ZenickoDobojski),
@@ -107,6 +107,20 @@ object RadarConfig {
         RadarCoordinate("Rakova Noga", 43.900994,18.032570,50),
         RadarCoordinate("Resnik", 43.878944,18.064492,50),
         RadarCoordinate("Volujak", 43.880298,18.081658,50),
+
+        RadarCoordinate("M16-Podmilačje", 44.367348,17.298869,50),
+        RadarCoordinate("M16-Podbarevo", 44.416969,17.260897,50),
+        RadarCoordinate("M16-Lučina", 44.346374,17.288731,50),
+        RadarCoordinate("M16-Zastinje", 44.339687,17.277055,50),
+        // RadarCoordinate("M16-Crna Rijeka", 44.367348,17.298869,50),
+        RadarCoordinate("M5-Plivska jezera", 44.348045,17.200472,50),
+        RadarCoordinate("M5-Skela", 44.327029,17.255838,50),
+        RadarCoordinate("M5-Mračaj", 44.344266,17.251948,50),
+        RadarCoordinate("M5-Mile", 44.352199,17.228702,50),
+        RadarCoordinate("M5-Dolabije", 44.327024,17.245726,50),
+        RadarCoordinate("M5-Bravnice", 44.319364,17.249161,50),
+        RadarCoordinate("R413b-Divičani", 44.3462954,17.325781,50),
+        RadarCoordinate("R413b-Kuprešani", 44.383965,17.331685,50),
     )
 
     fun findCoordinatesByName(locationName: String, city: String? = null): List<RadarCoordinate> {
@@ -259,7 +273,19 @@ object RadarConfig {
         if (n == "polje" && contains(c, "kresevo"))
             return "Polje"
 
-        println("[RadarConfig] NIJE PREPOZNATO: '$raw'")
+        if (contains(n, "podmilacje")) return "M16-Podmilačje"
+        if (contains(n, "podbarevo")) return "M16-Podbarevo"
+        if (contains(n, "lucina")) return "M16-Lučina"
+        if (contains(n, "zastinje")) return "M16-Zastinje"
+        if (contains(n, "crna rijeka")) return "M16-Crna Rijeka"
+        if (contains(n, "plivska")) return "M5-Plivska jezera"
+        if (contains(n, "skela")) return "M5-Skela"
+        if (contains(n, "mracaj")) return "M5-Mračaj"
+        if (contains(n, "mile")) return "M5-Mile"
+        if (contains(n, "dolabije")) return "M5-Dolabije"
+        if (contains(n, "bravnice")) return "M5-Bravnice"
+        if (contains(n, "divicani")) return "R413b-Divičani"
+        if (contains(n, "kuprešani") || contains(n, "kupresani")) return "R413b-Kuprešani"
         return null
     }
 

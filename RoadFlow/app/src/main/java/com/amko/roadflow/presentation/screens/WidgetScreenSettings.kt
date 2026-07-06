@@ -48,6 +48,8 @@ fun WidgetSettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFD9D9D9))
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         Row(
             modifier = Modifier

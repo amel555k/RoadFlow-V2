@@ -12,7 +12,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.amko.roadflow.presentation.components.Sidebar
 import com.amko.roadflow.presentation.screens.MainScreen
 import com.amko.roadflow.presentation.screens.MapScreen
 import com.amko.roadflow.presentation.screens.SettingsScreen
@@ -41,50 +40,67 @@ class MainActivity : ComponentActivity() {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
-                Sidebar(
-                    currentRoute = currentRoute,
-                    onNavigate = { route ->
-                        scope.launch { drawerState.close() }
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    drawerState = drawerState
-                ) {
-                    NavHost(navController = navController, startDestination = "main") {
-                        composable("main") {
-                            MainScreen(
-                                viewModel = mainViewModel,
-                                onOpenDrawer = { scope.launch { drawerState.open() } }
-                            )
-                        }
-                        composable("history") {
-                            HistoryScreen(
-                                viewModel = historyViewModel,
-                                onOpenDrawer = { scope.launch { drawerState.open() } }
-                            )
-                        }
-                        composable("map") {
-                            MapScreen(onOpenDrawer = { scope.launch { drawerState.open() } })
-                        }
-                        composable("settings") {
-                            SettingsScreen(
-                                onBack = { navController.popBackStack() },
-                                onNavigateToTheme = { navController.navigate("theme_settings") },
-                                onNavigateToWidget = { navController.navigate("widget_settings") }
-                            )
-                        }
-                        composable("theme_settings") {
-                            ThemeSettingsScreen(onBack = { navController.popBackStack() })
-                        }
-                        composable("widget_settings") {
-                            WidgetSettingsScreen(
-                                mainViewModel = mainViewModel,
-                                onBack = { navController.popBackStack() }
-                            )
-                        }
+                NavHost(navController = navController, startDestination = "main") {
+                    composable("main") {
+                        MainScreen(
+                            viewModel = mainViewModel,
+                            currentRoute = currentRoute,
+                            onNavigate = { route ->
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                    composable("history") {
+                        HistoryScreen(
+                            viewModel = historyViewModel,
+                            currentRoute = currentRoute,
+                            onNavigate = { route ->
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                    composable("map") {
+                        MapScreen(
+                            currentRoute = currentRoute,
+                            onNavigate = { route ->
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                    composable("settings") {
+                        SettingsScreen(
+                            currentRoute = currentRoute,
+                            onNavigate = { route ->
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            onNavigateToTheme = { navController.navigate("theme_settings") },
+                            onNavigateToWidget = { navController.navigate("widget_settings") }
+                        )
+                    }
+                    composable("theme_settings") {
+                        ThemeSettingsScreen(onBack = { navController.popBackStack() })
+                    }
+                    composable("widget_settings") {
+                        WidgetSettingsScreen(
+                            mainViewModel = mainViewModel,
+                            onBack = { navController.popBackStack() }
+                        )
                     }
                 }
             }

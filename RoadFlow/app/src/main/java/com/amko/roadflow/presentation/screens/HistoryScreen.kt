@@ -14,30 +14,33 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amko.roadflow.domain.model.Canton
 import com.amko.roadflow.domain.model.RadarData
+import com.amko.roadflow.presentation.components.BottomNavBar
+import com.amko.roadflow.presentation.components.NoConnectionDialog
 import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
 import com.amko.roadflow.presentation.viewmodel.RadarListItem
-import com.amko.roadflow.presentation.components.NoConnectionDialog
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
-import androidx.compose.ui.draw.clip
+
 @Composable
 fun HistoryScreen(
     viewModel: HistoryViewModel,
-    onOpenDrawer: () -> Unit
+    currentRoute: String?,
+    onNavigate: (String) -> Unit
 ) {
     val uiList by viewModel.uiList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -74,47 +77,51 @@ fun HistoryScreen(
 
     val selectedCantonLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: "Srednjobosanski kanton"
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFD9D9D9))) {
+    Box(modifier = Modifier.fillMaxSize()) {
 
         Column(modifier = Modifier.fillMaxSize()) {
 
-            Row(
+            Box(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .background(Color(0xFF212143))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF212143),
+                                Color(0xFF3F3F74),
+                                Color(0xFF7B6FC9)
+                            )
+                        )
+                    )
+                    .statusBarsPadding(),
+                contentAlignment = Alignment.TopCenter
             ) {
-                Icon(
-                    imageVector = Icons.Default.Menu,
-                    contentDescription = "Meni",
-                    tint = Color.White,
+
+                Column(
                     modifier = Modifier
-                        .padding(end = 16.dp)
-                        .clickable { onOpenDrawer() }
-                )
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Historija",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        .fillMaxWidth()
+                        .padding(top = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CalendarView(
+                        displayedMonth = displayedMonth,
+                        selectedDate = selectedDate,
+                        today = today,
+                        arrowsEnabled = !showDayOverlay,
+                        onPrevMonth = { displayedMonth = displayedMonth.minusMonths(1) },
+                        onNextMonth = { displayedMonth = displayedMonth.plusMonths(1) },
+                        onDayClick = { date ->
+                            viewModel.selectDate(date)
+                            showDayOverlay = true
+                        }
                     )
                 }
-                Spacer(modifier = Modifier.width(24.dp))
             }
 
-            CalendarView(
-                displayedMonth = displayedMonth,
-                selectedDate = selectedDate,
-                today = today,
-                arrowsEnabled = !showDayOverlay,
-                onPrevMonth = { displayedMonth = displayedMonth.minusMonths(1) },
-                onNextMonth = { displayedMonth = displayedMonth.plusMonths(1) },
-                onDayClick = { date ->
-                    viewModel.selectDate(date)
-                    showDayOverlay = true
-                }
+            BottomNavBar(
+                currentRoute = currentRoute,
+                onNavigate = onNavigate
             )
         }
 
@@ -164,7 +171,13 @@ private fun DayDetailsOverlay(
     onDismissDropdown: () -> Unit,
     onClose: () -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFD9D9D9))) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFD9D9D9))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
 
         Column(modifier = Modifier.fillMaxSize()) {
 
@@ -328,108 +341,131 @@ private fun CalendarView(
     onNextMonth: () -> Unit,
     onDayClick: (LocalDate) -> Unit
 ) {
-    Column(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 16.dp)
+            .shadow(elevation = 12.dp, shape = RoundedCornerShape(24.dp), clip = false),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowLeft,
-                contentDescription = "Prethodni mjesec",
-                tint = Color(0xFF212143),
+            Row(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clickable(enabled = arrowsEnabled) { onPrevMonth() }
-            )
-            Text(
-                text = displayedMonth.month.getDisplayName(TextStyle.FULL, Locale("bs"))
-                    .replaceFirstChar { it.uppercase() } + " ${displayedMonth.year}",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF212143)
-            )
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowRight,
-                contentDescription = "Sljedeći mjesec",
-                tint = Color(0xFF212143),
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable(enabled = arrowsEnabled) { onNextMonth() }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        val dayLabels = listOf("Pon", "Uto", "Sri", "Čet", "Pet", "Sub", "Ned")
-        Row(modifier = Modifier.fillMaxWidth()) {
-            dayLabels.forEach { label ->
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = label,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Gray
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFF1F0FA))
+                        .clickable(enabled = arrowsEnabled) { onPrevMonth() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowLeft,
+                        contentDescription = "Prethodni mjesec",
+                        tint = Color(0xFF212143)
+                    )
+                }
+                Text(
+                    text = displayedMonth.month.getDisplayName(TextStyle.FULL, Locale("bs"))
+                        .replaceFirstChar { it.uppercase() } + " ${displayedMonth.year}",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF212143)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFF1F0FA))
+                        .clickable(enabled = arrowsEnabled) { onNextMonth() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Sljedeći mjesec",
+                        tint = Color(0xFF212143)
                     )
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        val firstOfMonth = displayedMonth.atDay(1)
-        val leadingEmptyDays = (firstOfMonth.dayOfWeek.value + 6) % 7
-        val daysInMonth = displayedMonth.lengthOfMonth()
-        val totalCells = leadingEmptyDays + daysInMonth
-        val trailingEmptyDays = (7 - (totalCells % 7)) % 7
-
-        val cells: List<LocalDate?> = buildList {
-            repeat(leadingEmptyDays) { add(null) }
-            for (day in 1..daysInMonth) { add(displayedMonth.atDay(day)) }
-            repeat(trailingEmptyDays) { add(null) }
-        }
-
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(7),
-            modifier = Modifier.heightIn(max = 280.dp),
-            userScrollEnabled = false
-        ) {
-            items(cells) { date ->
-                if (date == null) {
-                    Box(modifier = Modifier.aspectRatio(1f))
-                } else {
-                    val isToday = date == today
-                    val isSelected = date == selectedDate
-                    val backgroundColor = when {
-                        isSelected -> Color(0xFFBDBDBD)
-                        isToday -> Color(0xFF7B6FC9)
-                        else -> Color.Transparent
-                    }
-                    val textColor = when {
-                        isToday -> Color.White
-                        isSelected -> Color.Black
-                        else -> Color.Black
-                    }
-                    Box(
-                        modifier = Modifier
-                            .aspectRatio(1f)
-                            .padding(3.dp)
-                            .clip(CircleShape)
-                            .background(backgroundColor)
-                            .clickable(enabled = arrowsEnabled) { onDayClick(date) },
-                        contentAlignment = Alignment.Center
-                    ) {
+            val dayLabels = listOf("Pon", "Uto", "Sri", "Čet", "Pet", "Sub", "Ned")
+            Row(modifier = Modifier.fillMaxWidth()) {
+                dayLabels.forEach { label ->
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         Text(
-                            text = date.dayOfMonth.toString(),
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
-                            color = textColor
+                            text = label,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Gray
                         )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            val firstOfMonth = displayedMonth.atDay(1)
+            val leadingEmptyDays = (firstOfMonth.dayOfWeek.value + 6) % 7
+            val daysInMonth = displayedMonth.lengthOfMonth()
+            val totalCells = leadingEmptyDays + daysInMonth
+            val trailingEmptyDays = (7 - (totalCells % 7)) % 7
+
+            val cells: List<LocalDate?> = buildList {
+                repeat(leadingEmptyDays) { add(null) }
+                for (day in 1..daysInMonth) { add(displayedMonth.atDay(day)) }
+                repeat(trailingEmptyDays) { add(null) }
+            }
+
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(7),
+                modifier = Modifier.heightIn(max = 280.dp),
+                userScrollEnabled = false
+            ) {
+                items(cells) { date ->
+                    if (date == null) {
+                        Box(modifier = Modifier.aspectRatio(1f))
+                    } else {
+                        val isToday = date == today
+                        val isSelected = date == selectedDate
+                        val backgroundColor = when {
+                            isSelected -> Color(0xFFBDBDBD)
+                            isToday -> Color(0xFF7B6FC9)
+                            else -> Color.Transparent
+                        }
+                        val textColor = when {
+                            isToday -> Color.White
+                            isSelected -> Color.Black
+                            else -> Color.Black
+                        }
+                        Box(
+                            modifier = Modifier
+                                .aspectRatio(1f)
+                                .padding(3.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(backgroundColor)
+                                .clickable(enabled = arrowsEnabled) { onDayClick(date) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = date.dayOfMonth.toString(),
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                                color = textColor
+                            )
+                        }
                     }
                 }
             }
@@ -446,8 +482,9 @@ private fun HistoryRadarItem(radar: RadarData) {
             .padding(horizontal = 10.dp, vertical = 3.dp)
     ) {
         Card(
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(

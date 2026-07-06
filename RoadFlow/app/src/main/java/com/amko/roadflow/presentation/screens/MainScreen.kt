@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,11 +21,14 @@ import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.presentation.viewmodel.RadarListItem
 import java.time.format.DateTimeFormatter
 import com.amko.roadflow.presentation.components.NoConnectionDialog
+import androidx.compose.foundation.layout.statusBarsPadding
+import com.amko.roadflow.presentation.components.BottomNavBar
 
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
-    onOpenDrawer: () -> Unit
+    currentRoute: String?,
+    onNavigate: (String) -> Unit
 ) {
     val flatList by viewModel.uiList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -55,7 +56,8 @@ fun MainScreen(
 
     val selectedCantonLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: ""
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFD9D9D9))) {
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFD9D9D9))
+        .statusBarsPadding()) {
 
         Column(modifier = Modifier.fillMaxSize()) {
 
@@ -67,22 +69,12 @@ fun MainScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Menu,
-                        contentDescription = "Meni",
-                        tint = Color.White,
-                        modifier = Modifier
-                            .padding(end = 16.dp)
-                            .clickable { onOpenDrawer() }
-                    )
-                    Text(
-                        text = "RoadFlow",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Text(
+                    text = "RoadFlow",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
                 Text(
                     text = currentDate.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")),
                     color = Color.White,
@@ -111,67 +103,75 @@ fun MainScreen(
                     fontSize = 14.sp
                 )
             }
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color(0xFF212143))
-                }
-            } else if (flatList.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Nema radara za odabrani kanton.",
-                        color = Color.Gray,
-                        fontSize = 16.sp
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(0.dp)
-                ) {
-                    items(
-                        items = flatList,
-                        key = { item ->
-                            when (item) {
-                                is RadarListItem.CityHeader -> "header_${item.city}"
-                                is RadarListItem.RadarEntry -> "radar_${item.radar.city}_${item.radar.time}_${item.radar.location}"
-                                is RadarListItem.Spacer -> item.id
-                            }
-                        },
-                        contentType = { item ->
-                            when (item) {
-                                is RadarListItem.CityHeader -> 0
-                                is RadarListItem.RadarEntry -> 1
-                                is RadarListItem.Spacer -> 2
-                            }
-                        }
-                    ) { item ->
-                        when (item) {
-                            is RadarListItem.CityHeader -> {
-                                Box(
-                                    modifier = Modifier
-                                        .padding(top = 10.dp)
-                                        .background(Color(0xFF212143), RoundedCornerShape(10.dp))
-                                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                                ) {
-                                    Text(
-                                        text = item.city,
-                                        color = Color.White,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+
+            Box(modifier = Modifier.weight(1f)) {
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFF212143))
+                    }
+                } else if (flatList.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "Nema radara za odabrani kanton.",
+                            color = Color.Gray,
+                            fontSize = 16.sp
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                    ) {
+                        items(
+                            items = flatList,
+                            key = { item ->
+                                when (item) {
+                                    is RadarListItem.CityHeader -> "header_${item.city}"
+                                    is RadarListItem.RadarEntry -> "radar_${item.radar.city}_${item.radar.time}_${item.radar.location}"
+                                    is RadarListItem.Spacer -> item.id
+                                }
+                            },
+                            contentType = { item ->
+                                when (item) {
+                                    is RadarListItem.CityHeader -> 0
+                                    is RadarListItem.RadarEntry -> 1
+                                    is RadarListItem.Spacer -> 2
                                 }
                             }
-                            is RadarListItem.RadarEntry -> {
-                                RadarItem(radar = item.radar)
-                            }
-                            is RadarListItem.Spacer -> {
-                                Spacer(modifier = Modifier.height(16.dp))
+                        ) { item ->
+                            when (item) {
+                                is RadarListItem.CityHeader -> {
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(top = 10.dp)
+                                            .background(Color(0xFF212143), RoundedCornerShape(10.dp))
+                                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = item.city,
+                                            color = Color.White,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                is RadarListItem.RadarEntry -> {
+                                    RadarItem(radar = item.radar)
+                                }
+                                is RadarListItem.Spacer -> {
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                }
                             }
                         }
                     }
                 }
             }
+
+            BottomNavBar(
+                currentRoute = currentRoute,
+                onNavigate = onNavigate
+            )
         }
 
         if (isDropdownOpen) {

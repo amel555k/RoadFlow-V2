@@ -6,8 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,13 +42,16 @@ import com.amko.roadflow.utils.createCircleFeature
 import com.amko.roadflow.utils.createRadarBitmap
 import com.amko.roadflow.presentation.components.SpeedOverlay
 import com.amko.roadflow.presentation.components.NoConnectionDialog
+import com.amko.roadflow.presentation.components.BottomNavBar
+
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
 private const val USER_ICON_ID = "user-icon"
 
 @Composable
 fun MapScreen(
-    onOpenDrawer: () -> Unit,
+    currentRoute: String?,
+    onNavigate: (String) -> Unit,
     viewModel: MapViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -261,29 +262,13 @@ fun MapScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(androidx.compose.ui.graphics.Color(0xFF212143))
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Menu,
-                contentDescription = "Meni",
-                tint = androidx.compose.ui.graphics.Color.White,
-                modifier = Modifier.padding(end = 16.dp).clickable { onOpenDrawer() }
-            )
-            Text(
-                text = "Mape",
-                color = androidx.compose.ui.graphics.Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+    ) {
 
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f)) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { mapViewRef },
@@ -536,5 +521,10 @@ fun MapScreen(
                 )
             }
         }
+
+        BottomNavBar(
+            currentRoute = currentRoute,
+            onNavigate = onNavigate
+        )
     }
 }
