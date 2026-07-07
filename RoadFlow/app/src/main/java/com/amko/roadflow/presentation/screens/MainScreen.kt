@@ -1,5 +1,6 @@
 package com.amko.roadflow.presentation.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,6 +24,8 @@ import java.time.format.DateTimeFormatter
 import com.amko.roadflow.presentation.components.NoConnectionDialog
 import androidx.compose.foundation.layout.statusBarsPadding
 import com.amko.roadflow.presentation.components.BottomNavBar
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun MainScreen(
@@ -35,6 +38,26 @@ fun MainScreen(
     val selectedCanton by viewModel.selectedCanton.collectAsState()
     val showNoInternet by viewModel.showNoInternet.collectAsState()
     val currentDate by viewModel.currentDate.collectAsState()
+
+    val context = LocalContext.current
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (!granted) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
 
     var isDropdownOpen by remember { mutableStateOf(false) }
 

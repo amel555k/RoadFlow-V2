@@ -327,6 +327,60 @@ class RadarParser(
         return parseFileContent(fileContent)
     }
 
+    suspend fun getExpandedRadarsForMapAsync(): List<RadarData> {
+        val fileContent = readFromFileAsync()
+        if (fileContent.isBlank()) return emptyList()
+        return parseFileContentExpanded(fileContent)
+    }
+
+    private fun parseFileContentExpanded(content: String): List<RadarData> {
+        val radars = mutableListOf<RadarData>()
+        val lines = content.split("\n").filter { it.isNotBlank() }
+        var currentCity = ""
+
+        lines.forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.startsWith("===") && trimmed.endsWith("===")) {
+                currentCity = trimmed.replace("===", "").trim()
+                return@forEach
+            }
+            val parts = trimmed.split(" - ", limit = 2)
+            if (parts.size == 2) {
+                val timePart = parts[0].trim()
+                val locationName = parts[1].trim()
+                val coordinates = RadarConfig.findCoordinatesByName(locationName)
+
+                if (coordinates.isNotEmpty()) {
+                    coordinates.forEach { coord ->
+                        radars.add(
+                            RadarData(
+                                city = currentCity,
+                                time = timePart,
+                                location = locationName,
+                                pageDate = LocalDateTime.now(),
+                                coordinate = coord,
+                                latitude = coord.latitude,
+                                longitude = coord.longitude,
+                                speedLimit = coord.speedLimit
+                            )
+                        )
+                    }
+                } else {
+                    radars.add(
+                        RadarData(
+                            city = currentCity,
+                            time = timePart,
+                            location = locationName,
+                            pageDate = LocalDateTime.now()
+                        )
+                    )
+                }
+            }
+        }
+
+        return radars
+    }
+
     private fun parseFileContent(content: String): List<RadarData> {
         val radars = mutableListOf<RadarData>()
         val lines = content.split("\n").filter { it.isNotBlank() }

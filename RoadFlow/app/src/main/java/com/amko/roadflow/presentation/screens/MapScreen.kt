@@ -102,6 +102,29 @@ fun MapScreen(
         }
     }
 
+    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            val backgroundGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (fineGranted && !backgroundGranted) {
+                backgroundPermissionLauncher.launch(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            }
+        }
+    }
+
+
     LaunchedEffect(Unit) {
         val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
             context,
@@ -370,6 +393,7 @@ fun MapScreen(
                                 if (isActiveTracking) {
 
                                     viewModel.locationService.stopActiveTracking()
+                                    viewModel.stopBackgroundTracking()
                                     alertService.stopAlerts()
 
                                     delay(100)
@@ -390,6 +414,7 @@ fun MapScreen(
                                 } else {
                                     viewModel.locationService.stopPassiveTracking()
                                     viewModel.locationService.startActiveTracking()
+                                    viewModel.startBackgroundTracking()
 
                                     val loc = viewModel.locationService.location.value
                                     if (loc != null) {
