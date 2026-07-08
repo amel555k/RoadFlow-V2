@@ -55,6 +55,7 @@ fun MapScreen(
     viewModel: MapViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val composeInstanceId = remember { java.util.UUID.randomUUID().toString().take(8) }
 
     DisposableEffect(Unit) {
         val activity = context as? android.app.Activity
@@ -86,10 +87,11 @@ fun MapScreen(
     val selectedRadar by viewModel.selectedRadar.collectAsState()
     var isMapReady by remember { mutableStateOf(false) }
     var userSymbol by remember { mutableStateOf<Symbol?>(null) }
-    var didInitialZoom by remember { mutableStateOf(false) }
+    val hadSavedCameraOnEnter = remember { viewModel.savedCameraLat != null }
+    var didInitialZoom by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var isTransitioningToTracking by remember { mutableStateOf(false) }
     var showNoGps by remember { mutableStateOf(false) }
-    var locationFound by remember { mutableStateOf(false) }
+    var locationFound by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var gpsWasDisabled by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -176,7 +178,8 @@ fun MapScreen(
             }
         }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(activeRadars, styleRef) {
@@ -294,7 +297,8 @@ fun MapScreen(
         Box(modifier = Modifier.weight(1f)) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
-                factory = { mapViewRef },
+                factory = {
+                    mapViewRef },
                 update = { view ->
                     view.getMapAsync { map ->
                         mapRef = map
@@ -307,6 +311,20 @@ fun MapScreen(
                             .include(LatLng(42.56, 19.50))
                             .build()
                         map.setLatLngBoundsForCameraTarget(bihBounds)
+
+                        map.addOnCameraIdleListener {
+                            if (!isMapReady) return@addOnCameraIdleListener
+                            val pos = map.cameraPosition
+                            val isStaleMap = map !== mapRef
+                            if (isStaleMap) return@addOnCameraIdleListener
+                            viewModel.saveCameraState(
+                                lat = pos.target?.latitude ?: 0.0,
+                                lng = pos.target?.longitude ?: 0.0,
+                                zoom = pos.zoom,
+                                tilt = pos.tilt,
+                                bearing = pos.bearing
+                            )
+                        }
 
                         map.setStyle(MAP_API_KEY) { style ->
                             styleRef = style
@@ -351,11 +369,40 @@ fun MapScreen(
                                 viewModel.selectRadar(activeRadars.getOrNull(index))
                                 true
                             }
-                            map.animateCamera(
-                                CameraUpdateFactory.newLatLngZoom(
-                                    LatLng(43.8563, 18.4131), 12.0
+
+                            val savedLat = viewModel.savedCameraLat
+                            val savedLng = viewModel.savedCameraLng
+
+                            if (savedLat != null && savedLng != null) {
+                                val savedZoom = viewModel.savedCameraZoom ?: 12.0
+                                val savedTilt = viewModel.savedCameraTilt ?: 0.0
+                                val savedBearing = viewModel.savedCameraBearing ?: 0.0
+
+                                map.moveCamera(
+                                    CameraUpdateFactory.newCameraPosition(
+                                        CameraPosition.Builder()
+                                            .target(LatLng(savedLat, savedLng))
+                                            .zoom(savedZoom)
+                                            .tilt(savedTilt)
+                                            .bearing(savedBearing)
+                                            .build()
+                                    )
                                 )
-                            )
+
+                                viewModel.saveCameraState(
+                                    lat = savedLat,
+                                    lng = savedLng,
+                                    zoom = savedZoom,
+                                    tilt = savedTilt,
+                                    bearing = savedBearing
+                                )
+                            } else {
+                                map.animateCamera(
+                                    CameraUpdateFactory.newLatLngZoom(
+                                        LatLng(43.8563, 18.4131), 12.0
+                                    )
+                                )
+                            }
 
                             isMapReady = true
                         }

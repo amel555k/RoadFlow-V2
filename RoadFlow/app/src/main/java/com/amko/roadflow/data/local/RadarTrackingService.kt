@@ -27,6 +27,7 @@ class RadarTrackingService : Service() {
     companion object {
         const val ACTION_START = "com.amko.roadflow.action.START_TRACKING"
         const val ACTION_STOP = "com.amko.roadflow.action.STOP_TRACKING"
+        const val EXTRA_OPEN_MAP = "open_map"
 
         private const val FOREGROUND_CHANNEL_ID = "radar_tracking_channel"
         private const val FOREGROUND_NOTIFICATION_ID = 1001
@@ -34,11 +35,31 @@ class RadarTrackingService : Service() {
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
-        var locationService: LocationTrackingService? = null
-            private set
+        private var _locationService: LocationTrackingService? = null
+        val locationService: LocationTrackingService
+            get() {
+                if (_locationService == null) {
+                    _locationService = LocationTrackingService(sharedAppContext!!)
+                }
+                return _locationService!!
+            }
 
         var alertService: RadarAlertService? = null
             private set
+
+        private var sharedAppContext: Context? = null
+
+        fun init(context: Context) {
+            if (sharedAppContext == null) {
+                sharedAppContext = context.applicationContext
+            }
+            if (_locationService == null) {
+                _locationService = LocationTrackingService(sharedAppContext!!)
+            }
+            if (alertService == null) {
+                alertService = RadarAlertService(sharedAppContext!!)
+            }
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, RadarTrackingService::class.java).apply {
@@ -63,8 +84,7 @@ class RadarTrackingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        locationService = LocationTrackingService(applicationContext)
-        alertService = RadarAlertService(applicationContext)
+        init(applicationContext)
         createNotificationChannel()
     }
 
@@ -82,13 +102,13 @@ class RadarTrackingService : Service() {
 
         startForeground(FOREGROUND_NOTIFICATION_ID, buildForegroundNotification())
 
-        locationService?.startActiveTracking()
+        locationService.startActiveTracking()
 
         val scope = CoroutineScope(Dispatchers.Default + Job())
         serviceScope = scope
 
         scope.launch {
-            locationService?.location?.collect { loc ->
+            locationService.location.collect { loc ->
                 if (loc != null) {
                     alertService?.checkProximity(loc)
                 }
@@ -100,7 +120,7 @@ class RadarTrackingService : Service() {
         _isRunning.value = false
         serviceScope?.cancel()
         serviceScope = null
-        locationService?.stopActiveTracking()
+        locationService.stopActiveTracking()
         alertService?.stopAlerts()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -110,10 +130,6 @@ class RadarTrackingService : Service() {
         super.onDestroy()
         serviceScope?.cancel()
         serviceScope = null
-        locationService?.dispose()
-        alertService?.dispose()
-        locationService = null
-        alertService = null
         _isRunning.value = false
     }
 
@@ -122,33 +138,47 @@ class RadarTrackingService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
+            val existing = manager.getNotificationChannel(FOREGROUND_CHANNEL_ID)
+            if (existing != null && existing.importance == NotificationManager.IMPORTANCE_MIN) {
+                manager.deleteNotificationChannel(FOREGROUND_CHANNEL_ID)
+            }
             val channel = NotificationChannel(
                 FOREGROUND_CHANNEL_ID,
                 "Praćenje vožnje",
-                NotificationManager.IMPORTANCE_MIN
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Prikazuje status praćenja lokacije tokom vožnje"
                 setSound(null, null)
                 enableVibration(false)
+                setShowBadge(false)
             }
             manager.createNotificationChannel(channel)
         }
     }
 
     private fun buildForegroundNotification(): Notification {
-        val contentIntent = PendingIntent.getActivity(
+        val contentIntent = Intent(this, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_MAP, true)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
             this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
+            contentIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         return NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
             .setContentTitle("RoadFlow")
-            .setContentText("Aktivno praćenje vožnje je aktivno")
+            .setContentText("Praćenje vožnje je aktivirano")
             .setSmallIcon(R.drawable.ic_notification)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
-            .setContentIntent(contentIntent)
+            .setShowWhen(false)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(pendingIntent)
             .build()
     }
 }

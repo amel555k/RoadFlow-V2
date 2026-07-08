@@ -49,7 +49,7 @@ object RadarConfig {
         RadarCoordinate("Aleja Konzula", 44.226121, 17.647507, speedLimit = 40),
         RadarCoordinate("Dolac na Lašvi", 44.216944, 17.694915, speedLimit = 50),
         RadarCoordinate("R441-Počulica", 44.167670, 17.834732, speedLimit = 50),
-        RadarCoordinate("M-5 Divjak", 44.166250, 17.770562, speedLimit = 50),
+        RadarCoordinate("M-5 Divjak", 44.170740, 17.766536, speedLimit = 50),
         RadarCoordinate("Lokalna cesta Divjak", 44.164295, 17.767976, speedLimit = 50),
         RadarCoordinate("Dolac na Lašvi (škola)", 44.216514, 17.690758, speedLimit = 40),
         RadarCoordinate("Polje Slavka Gavrančića", 44.208375, 17.695194, speedLimit = 50),

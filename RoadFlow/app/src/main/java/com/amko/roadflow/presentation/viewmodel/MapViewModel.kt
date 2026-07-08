@@ -21,8 +21,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val firebaseService = FirebaseService()
     private val parser = RadarParser(application, firebaseService)
 
-    val locationService = LocationTrackingService(application)
-    val alertService = RadarAlertService(application)
+    init {
+        RadarTrackingService.init(application)
+    }
+
+    val locationService: LocationTrackingService
+        get() = RadarTrackingService.locationService
+
+    val alertService: RadarAlertService
+        get() = RadarTrackingService.alertService!!
 
     val isTrackingServiceRunning: StateFlow<Boolean> = RadarTrackingService.isRunning
 
@@ -43,6 +50,33 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isTransitioningToTracking = MutableStateFlow(false)
     val isTransitioningToTracking: StateFlow<Boolean> = _isTransitioningToTracking
+
+    var savedCameraLat: Double? = null
+        private set
+    var savedCameraLng: Double? = null
+        private set
+    var savedCameraZoom: Double? = null
+        private set
+    var savedCameraTilt: Double? = null
+        private set
+    var savedCameraBearing: Double? = null
+        private set
+
+    fun saveCameraState(
+        lat: Double,
+        lng: Double,
+        zoom: Double,
+        tilt: Double,
+        bearing: Double
+    ) {
+
+        android.util.Log.d("MapCameraDebug", "saveCameraState called: lat=$lat lng=$lng zoom=$zoom tilt=$tilt bearing=$bearing | viewModel=${this.hashCode()}")
+        savedCameraLat = lat
+        savedCameraLng = lng
+        savedCameraZoom = zoom
+        savedCameraTilt = tilt
+        savedCameraBearing = bearing
+    }
 
     init {
         loadRadars()
@@ -135,7 +169,5 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        locationService.dispose()
-        alertService.dispose()
     }
 }
