@@ -69,8 +69,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         tilt: Double,
         bearing: Double
     ) {
-
-        android.util.Log.d("MapCameraDebug", "saveCameraState called: lat=$lat lng=$lng zoom=$zoom tilt=$tilt bearing=$bearing | viewModel=${this.hashCode()}")
         savedCameraLat = lat
         savedCameraLng = lng
         savedCameraZoom = zoom
@@ -118,7 +116,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    enum class RadarFilter { ACTIVE, TODAY }
+    enum class RadarFilter { ACTIVE, TODAY, ALL }
 
     fun setFilter(filter: RadarFilter) {
         _selectedFilter.value = filter
@@ -131,6 +129,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 RadarFilter.TODAY -> _allRadars.value.filter {
                     it.time != "INFO"
                 } + getStacionarni()
+
+                RadarFilter.ALL -> getSveKoordinate() + getStacionarni()
             }
             RadarTrackingService.setActiveRadars(_activeRadars.value)
         }
@@ -159,6 +159,20 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             RadarData(
                 city = coord.mainName,
                 time = "00:00 do 24:00",
+                location = coord.mainName,
+                latitude = coord.latitude,
+                longitude = coord.longitude,
+                speedLimit = coord.speedLimit,
+                coordinate = coord
+            )
+        }
+
+    private fun getSveKoordinate() = RadarConfig.coordinates
+        .filter { !it.stacionaran }
+        .map { coord ->
+            RadarData(
+                city = coord.mainName,
+                time = "INFO",
                 location = coord.mainName,
                 latitude = coord.latitude,
                 longitude = coord.longitude,

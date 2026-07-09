@@ -303,7 +303,7 @@ fun MapScreen(
                     view.getMapAsync { map ->
                         mapRef = map
 
-                        map.setMinZoomPreference(7.0)
+                        map.setMinZoomPreference(3.0)
                         map.setMaxZoomPreference(18.0)
 
                         val bihBounds = LatLngBounds.Builder()
@@ -573,6 +573,16 @@ fun MapScreen(
                         viewModel.setFilter(MapViewModel.RadarFilter.TODAY)
                     }
                 )
+
+                FilterButton(
+                    text = "SVI",
+                    isActive = selectedFilter == MapViewModel.RadarFilter.ALL,
+                    enabled = !isActiveTracking,
+                    onClick = {
+                        viewModel.setFilter(MapViewModel.RadarFilter.ALL)
+                    }
+                )
+
             }
 
             selectedRadar?.let { radar ->
