@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -21,11 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amko.roadflow.domain.model.Canton
-import com.amko.roadflow.domain.model.RadarData
 import com.amko.roadflow.presentation.components.BottomNavBar
 import com.amko.roadflow.presentation.components.NoConnectionDialog
 import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
@@ -35,6 +34,8 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import com.amko.roadflow.presentation.components.RadarItem
+import com.amko.roadflow.presentation.components.CantonPickerDropdown
 
 @Composable
 fun HistoryScreen(
@@ -47,6 +48,8 @@ fun HistoryScreen(
     val selectedCanton by viewModel.selectedCanton.collectAsState()
     val showNoInternet by viewModel.showNoInternet.collectAsState()
     val selectedDate by viewModel.selectedDate.collectAsState()
+
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     var isDropdownOpen by remember { mutableStateOf(false) }
     var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
@@ -86,13 +89,22 @@ fun HistoryScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .background(
-                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xFF212143),
-                                Color(0xFF3F3F74),
-                                Color(0xFF7B6FC9)
+                        brush = if (isDark) {
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.background,
+                                    MaterialTheme.colorScheme.background
+                                )
                             )
-                        )
+                        } else {
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xFF212143),
+                                    Color(0xFF3F3F74),
+                                    Color(0xFF7B6FC9)
+                                )
+                            )
+                        }
                     )
                     .statusBarsPadding(),
                 contentAlignment = Alignment.TopCenter
@@ -109,6 +121,7 @@ fun HistoryScreen(
                         selectedDate = selectedDate,
                         today = today,
                         arrowsEnabled = !showDayOverlay,
+                        isDark = isDark,
                         onPrevMonth = { displayedMonth = displayedMonth.minusMonths(1) },
                         onNextMonth = { displayedMonth = displayedMonth.plusMonths(1) },
                         onDayClick = { date ->
@@ -174,7 +187,7 @@ private fun DayDetailsOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFD9D9D9))
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
@@ -184,14 +197,14 @@ private fun DayDetailsOverlay(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF212143))
+                    .background(MaterialTheme.colorScheme.primary)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = Icons.Default.ArrowBack,
                     contentDescription = "Nazad",
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier
                         .padding(end = 16.dp)
                         .clickable { onClose() }
@@ -199,7 +212,7 @@ private fun DayDetailsOverlay(
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Text(
                         text = selectedDate?.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) ?: "",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -210,7 +223,7 @@ private fun DayDetailsOverlay(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF2E2E5E))
+                    .background(MaterialTheme.colorScheme.secondary)
                     .clickable { onDropdownToggle() }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -218,26 +231,26 @@ private fun DayDetailsOverlay(
             ) {
                 Text(
                     text = selectedCantonLabel,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontSize = 14.sp,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = if (isDropdownOpen) "▲" else "▼",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontSize = 14.sp
                 )
             }
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color(0xFF212143))
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             } else if (uiList.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         text = "Nema radara za odabrani dan.",
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                         fontSize = 16.sp
                     )
                 }
@@ -269,19 +282,19 @@ private fun DayDetailsOverlay(
                                 Box(
                                     modifier = Modifier
                                         .padding(top = 10.dp)
-                                        .background(Color(0xFF212143), RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
                                         .padding(horizontal = 14.dp, vertical = 8.dp)
                                 ) {
                                     Text(
                                         text = item.city,
-                                        color = Color.White,
+                                        color = MaterialTheme.colorScheme.onPrimary,
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
                             is RadarListItem.RadarEntry -> {
-                                HistoryRadarItem(radar = item.radar)
+                                RadarItem(radar = item.radar)
                             }
                             is RadarListItem.Spacer -> {
                                 Spacer(modifier = Modifier.height(16.dp))
@@ -293,40 +306,12 @@ private fun DayDetailsOverlay(
         }
 
         if (isDropdownOpen) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable { onDismissDropdown() }
+            CantonPickerDropdown(
+                cantonList = cantonList,
+                selectedCanton = selectedCanton,
+                onCantonSelected = onCantonSelected,
+                onDismiss = onDismissDropdown
             )
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 100.dp, end = 16.dp)
-                    .width(220.dp),
-                shape = RoundedCornerShape(10.dp),
-                elevation = CardDefaults.cardElevation(8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                    items(cantonList) { (canton, label) ->
-                        val isSelected = canton == selectedCanton
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onCantonSelected(canton) }
-                                .background(if (isSelected) Color(0xFFE8E8F5) else Color.White)
-                                .padding(horizontal = 14.dp, vertical = 12.dp)
-                        ) {
-                            Text(
-                                text = label,
-                                fontSize = 14.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color(0xFF212143) else Color.Black
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -337,6 +322,7 @@ private fun CalendarView(
     selectedDate: LocalDate?,
     today: LocalDate,
     arrowsEnabled: Boolean,
+    isDark: Boolean,
     onPrevMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onDayClick: (LocalDate) -> Unit
@@ -347,7 +333,7 @@ private fun CalendarView(
             .padding(horizontal = 16.dp)
             .shadow(elevation = 12.dp, shape = RoundedCornerShape(24.dp), clip = false),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
@@ -366,14 +352,14 @@ private fun CalendarView(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFF1F0FA))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
                         .clickable(enabled = arrowsEnabled) { onPrevMonth() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowLeft,
                         contentDescription = "Prethodni mjesec",
-                        tint = Color(0xFF212143)
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
                 Text(
@@ -381,20 +367,20 @@ private fun CalendarView(
                         .replaceFirstChar { it.uppercase() } + " ${displayedMonth.year}",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF212143)
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Box(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFF1F0FA))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
                         .clickable(enabled = arrowsEnabled) { onNextMonth() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowRight,
                         contentDescription = "Sljedeći mjesec",
-                        tint = Color(0xFF212143)
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -409,7 +395,7 @@ private fun CalendarView(
                             text = label,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
                 }
@@ -441,14 +427,13 @@ private fun CalendarView(
                         val isToday = date == today
                         val isSelected = date == selectedDate
                         val backgroundColor = when {
-                            isSelected -> Color(0xFFBDBDBD)
-                            isToday -> Color(0xFF7B6FC9)
+                            isSelected -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+                            isToday -> MaterialTheme.colorScheme.primary
                             else -> Color.Transparent
                         }
                         val textColor = when {
-                            isToday -> Color.White
-                            isSelected -> Color.Black
-                            else -> Color.Black
+                            isToday -> MaterialTheme.colorScheme.onPrimary
+                            else -> MaterialTheme.colorScheme.onSurface
                         }
                         Box(
                             modifier = Modifier
@@ -468,45 +453,6 @@ private fun CalendarView(
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HistoryRadarItem(radar: RadarData) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFD9D9D9))
-            .padding(horizontal = 10.dp, vertical = 3.dp)
-    ) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = radar.time,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = Color.Black,
-                    modifier = Modifier.width(70.dp)
-                )
-                Text(
-                    text = radar.location,
-                    fontSize = 14.sp,
-                    color = Color.Black,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
             }
         }
     }

@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import com.amko.roadflow.presentation.components.BottomNavBar
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
+import com.amko.roadflow.presentation.components.RadarItem
+import com.amko.roadflow.presentation.components.CantonPickerDropdown
 
 @Composable
 fun MainScreen(
@@ -79,7 +81,7 @@ fun MainScreen(
 
     val selectedCantonLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: ""
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFD9D9D9))
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
         .statusBarsPadding()) {
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -87,20 +89,20 @@ fun MainScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF212143))
+                    .background(MaterialTheme.colorScheme.primary)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = "RoadFlow",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = currentDate.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontSize = 14.sp
                 )
             }
@@ -108,7 +110,7 @@ fun MainScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF2E2E5E))
+                    .background(MaterialTheme.colorScheme.secondary)
                     .clickable { isDropdownOpen = !isDropdownOpen }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -116,13 +118,13 @@ fun MainScreen(
             ) {
                 Text(
                     text = selectedCantonLabel,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontSize = 14.sp,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = if (isDropdownOpen) "▲" else "▼",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontSize = 14.sp
                 )
             }
@@ -130,13 +132,13 @@ fun MainScreen(
             Box(modifier = Modifier.weight(1f)) {
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFF212143))
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
                 } else if (flatList.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             text = "Nema radara za odabrani kanton.",
-                            color = Color.Gray,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                             fontSize = 16.sp
                         )
                     }
@@ -168,12 +170,12 @@ fun MainScreen(
                                     Box(
                                         modifier = Modifier
                                             .padding(top = 10.dp)
-                                            .background(Color(0xFF212143), RoundedCornerShape(10.dp))
+                                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
                                             .padding(horizontal = 14.dp, vertical = 8.dp)
                                     ) {
                                         Text(
                                             text = item.city,
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onPrimary,
                                             fontSize = 16.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -198,43 +200,15 @@ fun MainScreen(
         }
 
         if (isDropdownOpen) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable { isDropdownOpen = false }
+            CantonPickerDropdown(
+                cantonList = cantonList,
+                selectedCanton = selectedCanton,
+                onCantonSelected = { canton ->
+                    viewModel.selectCanton(canton)
+                    isDropdownOpen = false
+                },
+                onDismiss = { isDropdownOpen = false }
             )
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 100.dp, end = 16.dp)
-                    .width(220.dp),
-                shape = RoundedCornerShape(10.dp),
-                elevation = CardDefaults.cardElevation(8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                    items(cantonList) { (canton, label) ->
-                        val isSelected = canton == selectedCanton
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.selectCanton(canton)
-                                    isDropdownOpen = false
-                                }
-                                .background(if (isSelected) Color(0xFFE8E8F5) else Color.White)
-                                .padding(horizontal = 14.dp, vertical = 12.dp)
-                        ) {
-                            Text(
-                                text = label,
-                                fontSize = 14.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color(0xFF212143) else Color.Black
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         if (showNoInternet) {
@@ -243,44 +217,6 @@ fun MainScreen(
                 message = "Molimo provjerite da li su uključeni WiFi ili mobilni podaci.",
                 onDismiss = { viewModel.showNoInternet.value = false }
             )
-        }
-    }
-}
-
-@Composable
-private fun RadarItem(radar: RadarData) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFD9D9D9))
-            .padding(horizontal = 10.dp, vertical = 3.dp)
-    ) {
-        Card(
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = radar.time,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = Color.Black,
-                    modifier = Modifier.width(70.dp)
-                )
-                Text(
-                    text = radar.location,
-                    fontSize = 14.sp,
-                    color = Color.Black,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
-            }
         }
     }
 }

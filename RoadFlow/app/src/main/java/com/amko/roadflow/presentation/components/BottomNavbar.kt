@@ -56,7 +56,7 @@ fun BottomNavBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF212143))
+            .background(MaterialTheme.colorScheme.primary)
             .navigationBarsPadding()
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
@@ -76,13 +76,13 @@ fun BottomNavBar(
                         id = if (isSelected) item.filledIcon else item.outlineIcon
                     ),
                     contentDescription = item.label,
-                    tint = if (isSelected) Color.White else Color.LightGray,
+                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
                     modifier = Modifier.size(26.dp)
                 )
                 Text(
                     text = item.label,
                     fontSize = 12.sp,
-                    color = if (isSelected) Color.White else Color.LightGray,
+                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                 )
             }

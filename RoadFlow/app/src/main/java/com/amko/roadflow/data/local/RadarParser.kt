@@ -194,7 +194,7 @@ class RadarParser(
                     locationPart = preprocessBihamkLocation(locationPart)
 
                     if (mapEnabled) {
-                        val coords = RadarConfig.findCoordinatesByName(locationPart)
+                        val coords = RadarConfig.findCoordinatesByName(locationPart, cityName)
                         if (coords.isNotEmpty()) {
                             coords.forEach { coordinate ->
                                 radars.add(
@@ -348,7 +348,7 @@ class RadarParser(
             if (parts.size == 2) {
                 val timePart = parts[0].trim()
                 val locationName = parts[1].trim()
-                val coordinates = RadarConfig.findCoordinatesByName(locationName)
+                val coordinates = RadarConfig.findCoordinatesByName(locationName, currentCity)
 
                 if (coordinates.isNotEmpty()) {
                     coordinates.forEach { coord ->
@@ -396,7 +396,7 @@ class RadarParser(
             if (parts.size == 2) {
                 val timePart = parts[0].trim()
                 val locationName = parts[1].trim()
-                val coordinates = RadarConfig.findCoordinatesByName(locationName)
+                val coordinates = RadarConfig.findCoordinatesByName(locationName, currentCity)
 
                 val radar = RadarData(
                     city = currentCity,

@@ -30,6 +30,9 @@ import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
 import com.amko.roadflow.presentation.screens.HistoryScreen
 import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
+import androidx.compose.runtime.collectAsState
+import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
+import com.amko.roadflow.ui.theme.AppTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -43,7 +46,10 @@ class MainActivity : ComponentActivity() {
         pendingOpenMap.value = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
 
         setContent {
-            RoadFlowTheme {
+            val themeViewModel: ThemeViewModel = viewModel()
+            val themeMode by themeViewModel.themeMode.collectAsState()
+
+            RoadFlowTheme(appTheme = themeMode) {
                 val navController = rememberNavController()
                 navControllerRef = navController
 
@@ -122,7 +128,10 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("theme_settings") {
-                        ThemeSettingsScreen(onBack = { navController.popBackStack() })
+                        ThemeSettingsScreen(
+                            themeViewModel = themeViewModel,
+                            onBack = { navController.popBackStack() }
+                        )
                     }
                     composable("widget_settings") {
                         WidgetSettingsScreen(

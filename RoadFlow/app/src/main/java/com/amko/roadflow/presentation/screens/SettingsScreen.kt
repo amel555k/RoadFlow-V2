@@ -24,7 +24,7 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .background(Color(0xFFD9D9D9))
+                .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding()
         ) {
 
@@ -36,7 +36,7 @@ fun SettingsScreen(
                     modifier = Modifier.clickable { onNavigateToTheme() },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color.Gray.copy(alpha = 0.5f))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.2f))
                 ListItem(
                     headlineContent = { Text("Widget", fontWeight = FontWeight.Medium) },
                     modifier = Modifier.clickable { onNavigateToWidget() },

@@ -43,6 +43,7 @@ import com.amko.roadflow.utils.createRadarBitmap
 import com.amko.roadflow.presentation.components.SpeedOverlay
 import com.amko.roadflow.presentation.components.NoConnectionDialog
 import com.amko.roadflow.presentation.components.BottomNavBar
+import androidx.compose.material3.MaterialTheme
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
@@ -303,7 +304,7 @@ fun MapScreen(
                     view.getMapAsync { map ->
                         mapRef = map
 
-                        map.setMinZoomPreference(3.0)
+                        map.setMinZoomPreference(6.0)
                         map.setMaxZoomPreference(18.0)
 
                         val bihBounds = LatLngBounds.Builder()
@@ -462,6 +463,7 @@ fun MapScreen(
                                     viewModel.locationService.stopPassiveTracking()
                                     viewModel.locationService.startActiveTracking()
                                     viewModel.startBackgroundTracking()
+                                    viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
 
                                     val loc = viewModel.locationService.location.value
                                     if (loc != null) {

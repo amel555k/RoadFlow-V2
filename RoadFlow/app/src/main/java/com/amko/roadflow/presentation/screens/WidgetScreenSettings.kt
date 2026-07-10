@@ -47,14 +47,14 @@ fun WidgetSettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFD9D9D9))
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF212143))
+                .background(MaterialTheme.colorScheme.primary)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -68,7 +68,7 @@ fun WidgetSettingsScreen(
             Spacer(modifier = Modifier.width(16.dp))
             Text(
                 text = "Postavke widgeta",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -145,9 +145,9 @@ fun WidgetSettingsScreen(
                     saveMessage.value = "Spremljeno!"
                 },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212143))
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text("Spremi izbor", color = Color.White)
+                Text("Spremi izbor", color = MaterialTheme.colorScheme.onPrimary)
             }
         }
     }
@@ -167,14 +167,14 @@ fun CityDropdown(
             text = "$label:",
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(bottom = 8.dp),
-            color = Color.DarkGray
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
         )
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.surface,
                     shape = RoundedCornerShape(8.dp)
                 )
                 .clickable { onExpandedChange(!expanded) }
@@ -186,13 +186,13 @@ fun CityDropdown(
                 text = selectedCity,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
-                color = Color.Black
+                color = MaterialTheme.colorScheme.onSurface
             )
             Icon(
                 imageVector = Icons.Filled.ArrowDropDown,
                 contentDescription = null,
                 modifier = Modifier.padding(start = 8.dp),
-                tint = Color.Black
+                tint = MaterialTheme.colorScheme.onSurface
             )
         }
         DropdownMenu(
@@ -201,11 +201,11 @@ fun CityDropdown(
             modifier = Modifier
                 .fillMaxWidth(0.8f)
                 .heightIn(max = 400.dp)
-                .background(Color.White)
+                .background(MaterialTheme.colorScheme.surface)
         ) {
             allCities.forEach { city ->
                 DropdownMenuItem(
-                    text = { Text(city, color = Color.Black) },
+                    text = { Text(city, color = MaterialTheme.colorScheme.onSurface) },
                     onClick = { onCitySelected(city) }
                 )
             }

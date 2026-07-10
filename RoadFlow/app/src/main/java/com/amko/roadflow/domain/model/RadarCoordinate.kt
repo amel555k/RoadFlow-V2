@@ -7,5 +7,6 @@ data class RadarCoordinate(
     val speedLimit: Int,
     val startTime: String? = null,
     val endTime: String? = null,
-    val stacionaran: Boolean = false
+    val stacionaran: Boolean = false,
+    val city: String?=null
 )

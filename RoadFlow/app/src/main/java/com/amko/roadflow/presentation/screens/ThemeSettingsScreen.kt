@@ -14,23 +14,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amko.roadflow.R
+import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
+import com.amko.roadflow.ui.theme.AppTheme
 
 @Composable
-fun ThemeSettingsScreen(onBack: () -> Unit) {
-    var selectedTheme by remember { mutableStateOf("System default") }
-    val themes = listOf("Light mode", "Dark mode", "System default")
+fun ThemeSettingsScreen(
+    themeViewModel: ThemeViewModel,
+    onBack: () -> Unit
+) {
+    val selectedTheme by themeViewModel.themeMode.collectAsState()
+
+    val themes = listOf(
+        AppTheme.LIGHT to "Light mode",
+        AppTheme.DARK to "Dark mode",
+        AppTheme.SYSTEM to "System default"
+    )
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFD9D9D9))
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF212143))
+                .background(MaterialTheme.colorScheme.primary)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -44,31 +54,41 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
             Spacer(modifier = Modifier.width(16.dp))
             Text(
                 text = "Theme",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
         }
 
         Column(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
-            themes.forEach { theme ->
+            themes.forEach { (themeEnum, themeLabel) ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { selectedTheme = theme }
+                        .clickable { themeViewModel.setThemeMode(themeEnum) }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(text = theme, fontSize = 16.sp)
+                    Text(
+                        text = themeLabel,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
                     RadioButton(
-                        selected = (theme == selectedTheme),
-                        onClick = { selectedTheme = theme },
-                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF212143))
+                        selected = (themeEnum == selectedTheme),
+                        onClick = { themeViewModel.setThemeMode(themeEnum) },
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = MaterialTheme.colorScheme.primary,
+                            unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                        )
                     )
                 }
-                if (theme != themes.last()) {
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color.Gray.copy(alpha = 0.5f))
+                if (themeEnum != themes.last().first) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f)
+                    )
                 }
             }
         }
