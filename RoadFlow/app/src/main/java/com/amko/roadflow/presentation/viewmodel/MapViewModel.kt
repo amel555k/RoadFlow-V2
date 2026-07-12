@@ -84,12 +84,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                com.amko.roadflow.data.local.TimeProvider.awaitFirstSync()
+
                 parser.parseAllLocationsAsFlow().collect { }
 
                 val all = parser.getExpandedRadarsForMapAsync()
                 _allRadars.value = all
 
-                val now = LocalTime.now()
+                val now = com.amko.roadflow.data.local.TimeProvider.nowTime()
                 val active = all.filter { radar ->
                     radar.time != "INFO" && isActiveNow(radar.time, now)
                 }
@@ -121,7 +123,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun setFilter(filter: RadarFilter) {
         _selectedFilter.value = filter
         viewModelScope.launch {
-            val now = LocalTime.now()
+            com.amko.roadflow.data.local.TimeProvider.awaitFirstSync()
+            val now = com.amko.roadflow.data.local.TimeProvider.nowTime()
             _activeRadars.value = when (filter) {
                 RadarFilter.ACTIVE -> _allRadars.value.filter {
                     it.time != "INFO" && isActiveNow(it.time, now)

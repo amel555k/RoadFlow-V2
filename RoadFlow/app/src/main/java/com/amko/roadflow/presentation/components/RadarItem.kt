@@ -1,7 +1,9 @@
 package com.amko.roadflow.presentation.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -16,7 +18,11 @@ import androidx.compose.ui.unit.sp
 import com.amko.roadflow.domain.model.RadarData
 
 @Composable
-fun RadarItem(radar: RadarData) {
+fun RadarItem(radar: RadarData, highlightIfActive: Boolean = true) {
+    val isActive = remember(radar.time, highlightIfActive) {
+        highlightIfActive && radar.isActiveAt(com.amko.roadflow.data.local.TimeProvider.nowTime())
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -26,7 +32,19 @@ fun RadarItem(radar: RadarData) {
         Card(
             shape = RoundedCornerShape(8.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (isActive) {
+                        Modifier.border(
+                            width = 2.dp,
+                            color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
             Row(
                 modifier = Modifier

@@ -12,7 +12,6 @@ import com.amko.roadflow.domain.model.RadarData
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
@@ -27,14 +26,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val firebaseService = FirebaseService()
     private val parser = RadarParser(application, firebaseService)
 
+    private val prefs = application.getSharedPreferences("roadflow_prefs", Application.MODE_PRIVATE)
+
     private val _allRadars = MutableStateFlow<List<RadarData>>(emptyList())
     private val _displayedRadars = MutableStateFlow<List<RadarData>>(emptyList())
     val displayedRadars: StateFlow<List<RadarData>> = _displayedRadars
 
     val isLoading = MutableStateFlow(true)
     val showNoInternet = MutableStateFlow(false)
-    val selectedCanton = MutableStateFlow<Canton?>(Canton.Srednjobosanski)
-    val currentDate = MutableStateFlow(LocalDate.now())
+
+    private val savedCantonName = prefs.getString("favorite_canton", null)
+    private val initialCanton = savedCantonName?.let { name ->
+        Canton.entries.firstOrNull { it.name == name }
+    }
+    val selectedCanton = MutableStateFlow(initialCanton)
+    val currentDate = MutableStateFlow(com.amko.roadflow.data.local.TimeProvider.nowDate())
+
+    val showWelcomeDialog = MutableStateFlow(savedCantonName == null)
+
+    fun saveFavoriteChoice(canton: Canton, city: String) {
+        prefs.edit()
+            .putString("favorite_canton", canton.name)
+            .putString("favorite_city", city)
+            .apply()
+
+        val filtered = filterForCanton(_allRadars.value, canton)
+        _displayedRadars.value = filtered
+        _uiList.value = buildUiList(filtered)
+        selectedCanton.value = canton
+
+        showWelcomeDialog.value = false
+    }
 
     private val _uiList = MutableStateFlow<List<RadarListItem>>(emptyList())
     val uiList: StateFlow<List<RadarListItem>> = _uiList
@@ -55,7 +77,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             isLoading.collect { android.util.Log.d("ROADFLOW", "isLoading=$it uiList.size=${_uiList.value.size}") }
         }
-        loadData()
+        viewModelScope.launch {
+            com.amko.roadflow.data.local.TimeProvider.awaitFirstSync()
+            currentDate.value = com.amko.roadflow.data.local.TimeProvider.nowDate()
+            loadData()
+        }
     }
 
     fun filterForCanton(all: List<RadarData>, canton: Canton?): List<RadarData> {
@@ -91,23 +117,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     parser.updateCache(partialRadars)
 
                     if (firstEmit) {
-                        val filtered = withContext(Dispatchers.Default) {
-                            filterForCanton(partialRadars, selectedCanton.value)
+                        if (!showWelcomeDialog.value) {
+                            val filtered = withContext(Dispatchers.Default) {
+                                filterForCanton(partialRadars, selectedCanton.value)
+                            }
+                            _displayedRadars.value = filtered
+                            _uiList.value = buildUiList(filtered)
                         }
-                        _displayedRadars.value = filtered
-                        _uiList.value = buildUiList(filtered)
-                        currentDate.value = LocalDate.now()
+                        currentDate.value = com.amko.roadflow.data.local.TimeProvider.nowDate()
                         isLoading.value = false
                         firstEmit = false
                     } else {
-                        filteringJob?.cancel()
+                        if (!showWelcomeDialog.value) {
+                            filteringJob?.cancel()
 
-                        filteringJob = viewModelScope.launch(Dispatchers.Default) {
-                            val filtered = filterForCanton(partialRadars, selectedCanton.value)
-                            if (filtered != _displayedRadars.value) {
-                                withContext(Dispatchers.Main) {
-                                    _displayedRadars.value = filtered
-                                    _uiList.value = buildUiList(filtered)
+                            filteringJob = viewModelScope.launch(Dispatchers.Default) {
+                                val filtered = filterForCanton(partialRadars, selectedCanton.value)
+                                if (filtered != _displayedRadars.value) {
+                                    withContext(Dispatchers.Main) {
+                                        _displayedRadars.value = filtered
+                                        _uiList.value = buildUiList(filtered)
+                                    }
                                 }
                             }
                         }
@@ -125,8 +155,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _uiList.value = buildUiList(filtered)
                     }
                 }
-
-                currentDate.value = LocalDate.now()
+                currentDate.value = com.amko.roadflow.data.local.TimeProvider.nowDate()
                 showNoInternet.value = true
                 isLoading.value = false
             } catch (_: Exception) {

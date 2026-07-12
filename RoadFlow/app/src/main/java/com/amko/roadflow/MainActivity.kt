@@ -33,6 +33,7 @@ import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
 import androidx.compose.runtime.collectAsState
 import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
 import com.amko.roadflow.ui.theme.AppTheme
+import androidx.lifecycle.lifecycleScope
 
 class MainActivity : ComponentActivity() {
 
@@ -44,6 +45,10 @@ class MainActivity : ComponentActivity() {
         MapLibre.getInstance(this)
 
         pendingOpenMap.value = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
+
+        lifecycleScope.launch {
+            com.amko.roadflow.data.local.TimeProvider.sync()
+        }
 
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()

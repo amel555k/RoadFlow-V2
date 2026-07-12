@@ -52,14 +52,14 @@ fun HistoryScreen(
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     var isDropdownOpen by remember { mutableStateOf(false) }
-    var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
+    var today by remember { mutableStateOf(com.amko.roadflow.data.local.TimeProvider.nowDate()) }
+    var displayedMonth by remember { mutableStateOf(YearMonth.from(today)) }
     var showDayOverlay by remember { mutableStateOf(false) }
-    val today = remember { LocalDate.now() }
 
     LaunchedEffect(Unit) {
-        if (selectedCanton == null) {
-            viewModel.selectCanton(Canton.Srednjobosanski)
-        }
+        com.amko.roadflow.data.local.TimeProvider.awaitFirstSync()
+        today = com.amko.roadflow.data.local.TimeProvider.nowDate()
+        displayedMonth = YearMonth.from(today)
     }
 
     val cantonList = remember {
@@ -294,7 +294,7 @@ private fun DayDetailsOverlay(
                                 }
                             }
                             is RadarListItem.RadarEntry -> {
-                                RadarItem(radar = item.radar)
+                                RadarItem(radar = item.radar, highlightIfActive = false)
                             }
                             is RadarListItem.Spacer -> {
                                 Spacer(modifier = Modifier.height(16.dp))

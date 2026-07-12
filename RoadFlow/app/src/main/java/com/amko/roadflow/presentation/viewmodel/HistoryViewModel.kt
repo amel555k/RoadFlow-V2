@@ -18,13 +18,20 @@ import java.time.LocalDate
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
     private val firebaseService = FirebaseService()
 
+    private val prefs = application.getSharedPreferences("roadflow_prefs", Application.MODE_PRIVATE)
+
     private val _allRadars = MutableStateFlow<List<RadarData>>(emptyList())
     private val _displayedRadars = MutableStateFlow<List<RadarData>>(emptyList())
     val displayedRadars: StateFlow<List<RadarData>> = _displayedRadars
 
     val isLoading = MutableStateFlow(false)
     val showNoInternet = MutableStateFlow(false)
-    val selectedCanton = MutableStateFlow<Canton?>(null)
+
+    private val savedCantonName = prefs.getString("favorite_canton", null)
+    private val initialCanton = savedCantonName?.let { name ->
+        Canton.entries.firstOrNull { it.name == name }
+    }
+    val selectedCanton = MutableStateFlow(initialCanton)
     val selectedDate = MutableStateFlow<LocalDate?>(null)
 
     private val _uiList = MutableStateFlow<List<RadarListItem>>(emptyList())
@@ -74,6 +81,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             isLoading.value = true
             showNoInternet.value = false
             try {
+                com.amko.roadflow.data.local.TimeProvider.awaitFirstSync()
                 val radars = firebaseService.getHistoryRadarsAsync(date)
                 _allRadars.value = radars
 
