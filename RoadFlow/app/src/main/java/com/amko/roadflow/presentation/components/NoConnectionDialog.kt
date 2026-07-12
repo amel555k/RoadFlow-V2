@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -20,7 +19,7 @@ fun NoConnectionDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.padding(16.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -28,21 +27,21 @@ fun NoConnectionDialog(
                     text = title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,
-                    color = Color(0xFF212143)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = message,
                     fontSize = 14.sp,
-                    color = Color.DarkGray
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212143)),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier.align(Alignment.End)
                 ) {
-                    Text("U REDU", color = Color.White)
+                    Text("U REDU", color = MaterialTheme.colorScheme.onPrimary)
                 }
             }
         }

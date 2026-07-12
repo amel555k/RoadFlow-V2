@@ -44,6 +44,9 @@ import com.amko.roadflow.presentation.components.SpeedOverlay
 import com.amko.roadflow.presentation.components.NoConnectionDialog
 import com.amko.roadflow.presentation.components.BottomNavBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import com.amko.roadflow.R
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
@@ -94,6 +97,41 @@ fun MapScreen(
     var showNoGps by remember { mutableStateOf(false) }
     var locationFound by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var gpsWasDisabled by remember { mutableStateOf(false) }
+    var isGpsEnabled by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
+                    as android.location.LocationManager
+            val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+
+            if (!gpsEnabled && isGpsEnabled) {
+                showNoGps = true
+                gpsWasDisabled = true
+
+                if (isActiveTracking) {
+                    viewModel.locationService.stopActiveTracking()
+                    viewModel.stopBackgroundTracking()
+                    alertService.stopAlerts()
+                }
+
+                viewModel.locationService.stopPassiveTracking()
+
+                val sm = symbolManager
+                val existing = userSymbol
+                if (sm != null && existing != null) {
+                    sm.delete(existing)
+                    userSymbol = null
+                }
+
+                locationFound = false
+                didInitialZoom = false
+            }
+            isGpsEnabled = gpsEnabled
+
+            delay(1000)
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -236,12 +274,12 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking) {
+    LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled) {
         val map = mapRef ?: return@LaunchedEffect
         val sm = symbolManager ?: return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
         if (!isMapReady) return@LaunchedEffect
-
+        if (!isGpsEnabled) return@LaunchedEffect
         map.uiSettings.isScrollGesturesEnabled = !isActiveTracking
         map.uiSettings.isZoomGesturesEnabled = !isActiveTracking
         map.uiSettings.isRotateGesturesEnabled = !isActiveTracking
@@ -429,7 +467,7 @@ fun MapScreen(
                 verticalArrangement = Arrangement.spacedBy(15.dp),
                 horizontalAlignment = Alignment.End
             ) {
-                if (didInitialZoom && locationFound) {
+                if (didInitialZoom && locationFound && isGpsEnabled) {
                     Button(
                         onClick = {
                             coroutineScope.launch {
@@ -506,7 +544,7 @@ fun MapScreen(
                             containerColor = if (isActiveTracking)
                                 androidx.compose.ui.graphics.Color(0xFFF44336)
                             else
-                                androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                androidx.compose.ui.graphics.Color(0xFFD2F7FF)
                         ),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
                         contentPadding = PaddingValues(horizontal = 30.dp, vertical = 15.dp),
@@ -517,15 +555,34 @@ fun MapScreen(
                                 scaleY = animatedScale
                             }
                     ) {
-                        Text(
-                            text = if (isActiveTracking) "ZAVRŠI" else "KRENI",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = androidx.compose.ui.graphics.Color.White
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(
+                                    id = if (isActiveTracking) R.drawable.ic_stop else R.drawable.ic_nav_arrow
+                                ),
+                                contentDescription = null,
+                                tint = if (isActiveTracking)
+                                    androidx.compose.ui.graphics.Color.White
+                                else
+                                    androidx.compose.ui.graphics.Color(0xFF004E5A),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isActiveTracking) "ZAUSTAVI" else "KRENI",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isActiveTracking)
+                                    androidx.compose.ui.graphics.Color.White
+                                else
+                                    androidx.compose.ui.graphics.Color(0xFF004E5A)
+                            )
+                        }
                     }
-                } else if (gpsWasDisabled && !locationFound) {
-                    Button(
+                } else if (!isGpsEnabled ||(gpsWasDisabled && !locationFound )) {
+                    IconButton(
                         onClick = {
                             coroutineScope.launch {
                                 val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
@@ -544,18 +601,18 @@ fun MapScreen(
                                 }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = androidx.compose.ui.graphics.Color(0xFF2196F3)
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
-                        contentPadding = PaddingValues(horizontal = 30.dp, vertical = 15.dp),
-                        modifier = Modifier.defaultMinSize(minWidth = 140.dp)
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(
+                                color = androidx.compose.ui.graphics.Color.White,
+                                shape = androidx.compose.foundation.shape.CircleShape
+                            )
                     ) {
-                        Text(
-                            text = "PRONAĐI ME",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = androidx.compose.ui.graphics.Color.White
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_locate),
+                            contentDescription = null,
+                            tint = androidx.compose.ui.graphics.Color(0xFF004E5A),
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
@@ -576,14 +633,6 @@ fun MapScreen(
                     }
                 )
 
-                FilterButton(
-                    text = "SVI",
-                    isActive = selectedFilter == MapViewModel.RadarFilter.ALL,
-                    enabled = !isActiveTracking,
-                    onClick = {
-                        viewModel.setFilter(MapViewModel.RadarFilter.ALL)
-                    }
-                )
 
             }
 

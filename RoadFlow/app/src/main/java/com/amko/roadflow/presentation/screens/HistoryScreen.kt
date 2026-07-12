@@ -99,9 +99,9 @@ fun HistoryScreen(
                         } else {
                             androidx.compose.ui.graphics.Brush.verticalGradient(
                                 colors = listOf(
-                                    Color(0xFF212143),
-                                    Color(0xFF3F3F74),
-                                    Color(0xFF7B6FC9)
+                                    Color(0xFF0E1A2B),
+                                    Color(0xFF16273D),
+                                    Color(0xFF3C7EA8)
                                 )
                             )
                         }
