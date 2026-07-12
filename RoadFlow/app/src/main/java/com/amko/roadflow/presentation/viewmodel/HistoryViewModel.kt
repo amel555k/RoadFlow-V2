@@ -27,13 +27,22 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
     val isLoading = MutableStateFlow(false)
     val showNoInternet = MutableStateFlow(false)
 
-    private val savedCantonName = prefs.getString("favorite_canton", null)
-    private val initialCanton = savedCantonName?.let { name ->
-        Canton.entries.firstOrNull { it.name == name }
+    private fun readSavedCanton(): Canton? {
+        val savedCantonName = prefs.getString("favorite_canton", null)
+        return savedCantonName?.let { name ->
+            Canton.entries.firstOrNull { it.name == name }
+        }
     }
-    val selectedCanton = MutableStateFlow(initialCanton)
+
+    val selectedCanton = MutableStateFlow(readSavedCanton())
     val selectedDate = MutableStateFlow<LocalDate?>(null)
 
+    fun refreshCantonFromPrefs() {
+        val saved = readSavedCanton()
+        if (saved != null && saved != selectedCanton.value) {
+            selectCanton(saved)
+        }
+    }
     private val _uiList = MutableStateFlow<List<RadarListItem>>(emptyList())
     val uiList: StateFlow<List<RadarListItem>> = _uiList
 

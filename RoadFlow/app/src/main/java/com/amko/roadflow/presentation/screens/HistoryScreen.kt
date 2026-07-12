@@ -62,6 +62,15 @@ fun HistoryScreen(
         displayedMonth = YearMonth.from(today)
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.refreshCantonFromPrefs()
+    }
+
+    androidx.activity.compose.BackHandler(enabled = showDayOverlay) {
+        showDayOverlay = false
+        isDropdownOpen = false
+    }
+
     val cantonList = remember {
         listOf(
             Canton.UnskoSanski to "Unsko-sanski kanton",
