@@ -90,7 +90,6 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             isLoading.value = true
             showNoInternet.value = false
             try {
-                com.amko.roadflow.data.local.TimeProvider.awaitFirstSync()
                 val radars = firebaseService.getHistoryRadarsAsync(date)
                 _allRadars.value = radars
 

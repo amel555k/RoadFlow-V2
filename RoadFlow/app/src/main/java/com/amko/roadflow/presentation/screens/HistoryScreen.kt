@@ -52,13 +52,12 @@ fun HistoryScreen(
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     var isDropdownOpen by remember { mutableStateOf(false) }
-    var today by remember { mutableStateOf(com.amko.roadflow.data.local.TimeProvider.nowDate()) }
+    var today by remember { mutableStateOf(java.time.LocalDate.now()) }
     var displayedMonth by remember { mutableStateOf(YearMonth.from(today)) }
     var showDayOverlay by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        com.amko.roadflow.data.local.TimeProvider.awaitFirstSync()
-        today = com.amko.roadflow.data.local.TimeProvider.nowDate()
+        today = java.time.LocalDate.now()
         displayedMonth = YearMonth.from(today)
     }
 

@@ -185,11 +185,17 @@ class FirebaseService {
         try {
             if (radars.isEmpty()) return@withContext
 
+            TimeProvider.sync()
+            if (TimeProvider.isTimeSynced() && TimeProvider.nowDate() != date) return@withContext
+
             val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
             val url = getAuthenticatedUrl("${Secrets.FIREBASE_BASE_URL}history/$dateStr.json")
+            val existing = getHistoryRadarsAsync(date)
+
+            val merged = (existing + radars).distinctBy { "${it.city}|${it.time}|${it.location}" }
 
             val groupedData = JSONObject()
-            radars.groupBy { it.city }.forEach { (city, cityRadars) ->
+            merged.groupBy { it.city }.forEach { (city, cityRadars) ->
                 val jsonArray = org.json.JSONArray()
                 cityRadars.forEach { radar ->
                     val radarObj = JSONObject()
@@ -208,7 +214,7 @@ class FirebaseService {
 
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                println("[FirebaseService] Podaci uspješno poslani u history za datum: $dateStr")
+                println("[FirebaseService] Podaci uspješno merge-ovani u history za datum: $dateStr (ukupno: ${merged.size})")
             }
         } catch (e: Exception) {
             println("[FirebaseService] Greška pri slanju u history: ${e.message}")

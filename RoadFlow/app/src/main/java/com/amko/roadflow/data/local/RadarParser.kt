@@ -49,7 +49,7 @@ class RadarParser(
 
     suspend fun parseAllLocationsAsFlow(): kotlinx.coroutines.flow.Flow<List<RadarData>> =
         kotlinx.coroutines.flow.flow {
-            val todayDate = TimeProvider.nowDate()
+            val todayDate = LocalDate.now()
 
             if (filePath.exists()) {
                 val lastModified = LocalDate.ofEpochDay(filePath.lastModified() / 86400000L)
@@ -111,7 +111,7 @@ class RadarParser(
                 listOf(RadarData(
                     city = "STATUS SISTEMA", time = "INFO",
                     location = "Nisu pronađeni radari za današnji datum (${todayDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}).",
-                    pageDate = TimeProvider.now()
+                    pageDate = LocalDateTime.now()
                 ))
             } else deduped
 
@@ -357,7 +357,7 @@ class RadarParser(
                                 city = currentCity,
                                 time = timePart,
                                 location = locationName,
-                                pageDate = TimeProvider.now(),
+                                pageDate = LocalDateTime.now(),
                                 coordinate = coord,
                                 latitude = coord.latitude,
                                 longitude = coord.longitude,
@@ -371,7 +371,7 @@ class RadarParser(
                             city = currentCity,
                             time = timePart,
                             location = locationName,
-                            pageDate = TimeProvider.now()
+                            pageDate = LocalDateTime.now()
                         )
                     )
                 }
@@ -402,7 +402,7 @@ class RadarParser(
                     city = currentCity,
                     time = timePart,
                     location = locationName,
-                    pageDate = TimeProvider.now()
+                    pageDate = LocalDateTime.now()
                 )
 
                 if (coordinates.isNotEmpty()) {

@@ -40,7 +40,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Canton.entries.firstOrNull { it.name == name }
     }
     val selectedCanton = MutableStateFlow(initialCanton)
-    val currentDate = MutableStateFlow(com.amko.roadflow.data.local.TimeProvider.nowDate())
+    val currentDate = MutableStateFlow(java.time.LocalDate.now())
 
     val showWelcomeDialog = MutableStateFlow(savedCantonName == null)
 
@@ -78,8 +78,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isLoading.collect { android.util.Log.d("ROADFLOW", "isLoading=$it uiList.size=${_uiList.value.size}") }
         }
         viewModelScope.launch {
-            com.amko.roadflow.data.local.TimeProvider.awaitFirstSync()
-            currentDate.value = com.amko.roadflow.data.local.TimeProvider.nowDate()
+            currentDate.value = java.time.LocalDate.now()
             loadData()
         }
     }
@@ -124,7 +123,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _displayedRadars.value = filtered
                             _uiList.value = buildUiList(filtered)
                         }
-                        currentDate.value = com.amko.roadflow.data.local.TimeProvider.nowDate()
+                        currentDate.value = java.time.LocalDate.now()
                         isLoading.value = false
                         firstEmit = false
                     } else {
@@ -155,7 +154,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _uiList.value = buildUiList(filtered)
                     }
                 }
-                currentDate.value = com.amko.roadflow.data.local.TimeProvider.nowDate()
+                currentDate.value = java.time.LocalDate.now()
                 showNoInternet.value = true
                 isLoading.value = false
             } catch (_: Exception) {

@@ -9,9 +9,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -26,14 +24,11 @@ import com.amko.roadflow.presentation.screens.ThemeSettingsScreen
 import com.amko.roadflow.presentation.screens.WidgetSettingsScreen
 import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.ui.theme.RoadFlowTheme
-import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
 import com.amko.roadflow.presentation.screens.HistoryScreen
 import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
 import androidx.compose.runtime.collectAsState
 import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
-import com.amko.roadflow.ui.theme.AppTheme
-import androidx.lifecycle.lifecycleScope
 
 class MainActivity : ComponentActivity() {
 
@@ -45,10 +40,6 @@ class MainActivity : ComponentActivity() {
         MapLibre.getInstance(this)
 
         pendingOpenMap.value = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
-
-        lifecycleScope.launch {
-            com.amko.roadflow.data.local.TimeProvider.sync()
-        }
 
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
@@ -135,6 +126,7 @@ class MainActivity : ComponentActivity() {
                     composable("theme_settings") {
                         ThemeSettingsScreen(
                             themeViewModel = themeViewModel,
+                            mainViewModel=mainViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
