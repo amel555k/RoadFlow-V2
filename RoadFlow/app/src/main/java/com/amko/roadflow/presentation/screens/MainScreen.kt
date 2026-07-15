@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,21 +28,29 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import com.amko.roadflow.presentation.components.BottomNavBar
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.amko.roadflow.presentation.components.RadarItem
 import com.amko.roadflow.presentation.components.CantonPickerDropdown
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
     currentRoute: String?,
     onNavigate: (String) -> Unit
 ) {
+    android.util.Log.d("ROADFLOW1", "MainScreen composed viewModel=${System.identityHashCode(viewModel)}")
+
     val flatList by viewModel.uiList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val selectedCanton by viewModel.selectedCanton.collectAsState()
     val showNoInternet by viewModel.showNoInternet.collectAsState()
     val currentDate by viewModel.currentDate.collectAsState()
     val showWelcomeDialog by viewModel.showWelcomeDialog.collectAsState()
+
+    android.util.Log.d("ROADFLOW1", "MainScreen recompose: flatList.size=${flatList.size} isLoading=$isLoading showWelcomeDialog=$showWelcomeDialog")
 
     val cityList = remember {
         com.amko.roadflow.data.local.RadarConfig.locations
@@ -86,6 +96,8 @@ fun MainScreen(
             Canton.BrckoDistrikt to "Brčko distrikt"
         )
     }
+
+    val canPullToRefresh by viewModel.canPullToRefresh.collectAsState()
 
     val selectedCantonLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: ""
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
@@ -142,60 +154,83 @@ fun MainScreen(
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
-                    } else if (flatList.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "Nema radara za odabrani kanton.",
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                                fontSize = 16.sp
-                            )
-                        }
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(0.dp)
-                        ) {
-                            items(
-                                items = flatList,
-                                key = { item ->
-                                    when (item) {
-                                        is RadarListItem.CityHeader -> "header_${item.city}"
-                                        is RadarListItem.RadarEntry -> "radar_${item.radar.city}_${item.radar.time}_${item.radar.location}"
-                                        is RadarListItem.Spacer -> item.id
-                                    }
-                                },
-                                contentType = { item ->
-                                    when (item) {
-                                        is RadarListItem.CityHeader -> 0
-                                        is RadarListItem.RadarEntry -> 1
-                                        is RadarListItem.Spacer -> 2
-                                    }
+                        val listContent: @Composable () -> Unit = {
+                            if (flatList.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState()),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Nema radara za odabrani kanton.",
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                        fontSize = 16.sp
+                                    )
                                 }
-                            ) { item ->
-                                when (item) {
-                                    is RadarListItem.CityHeader -> {
-                                        Box(
-                                            modifier = Modifier
-                                                .padding(top = 10.dp)
-                                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
-                                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                                        ) {
-                                            Text(
-                                                text = item.city,
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                                ) {
+                                    items(
+                                        items = flatList,
+                                        key = { item ->
+                                            when (item) {
+                                                is RadarListItem.CityHeader -> "header_${item.city}"
+                                                is RadarListItem.RadarEntry -> "radar_${item.radar.city}_${item.radar.time}_${item.radar.location}"
+                                                is RadarListItem.Spacer -> item.id
+                                            }
+                                        },
+                                        contentType = { item ->
+                                            when (item) {
+                                                is RadarListItem.CityHeader -> 0
+                                                is RadarListItem.RadarEntry -> 1
+                                                is RadarListItem.Spacer -> 2
+                                            }
+                                        }
+                                    ) { item ->
+                                        when (item) {
+                                            is RadarListItem.CityHeader -> {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .padding(top = 10.dp)
+                                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = item.city,
+                                                        color = MaterialTheme.colorScheme.onPrimary,
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            }
+                                            is RadarListItem.RadarEntry -> {
+                                                RadarItem(radar = item.radar)
+                                            }
+                                            is RadarListItem.Spacer -> {
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                            }
                                         }
                                     }
-                                    is RadarListItem.RadarEntry -> {
-                                        RadarItem(radar = item.radar)
-                                    }
-                                    is RadarListItem.Spacer -> {
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                    }
                                 }
+                            }
+                        }
+
+                        if (canPullToRefresh) {
+                            PullToRefreshBox(
+                                isRefreshing = isRefreshing,
+                                onRefresh = { viewModel.refreshData() },
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                listContent()
+                            }
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                listContent()
                             }
                         }
                     }

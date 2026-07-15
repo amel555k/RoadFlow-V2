@@ -34,6 +34,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val isLoading = MutableStateFlow(true)
     val showNoInternet = MutableStateFlow(false)
+    val isRefreshing = MutableStateFlow(false)
 
     private val savedCantonName = prefs.getString("favorite_canton", null)
     private val initialCanton = savedCantonName?.let { name ->
@@ -43,6 +44,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentDate = MutableStateFlow(java.time.LocalDate.now())
 
     val showWelcomeDialog = MutableStateFlow(savedCantonName == null)
+    val canPullToRefresh = MutableStateFlow(true)
 
     fun saveFavoriteChoice(canton: Canton, city: String) {
         prefs.edit()
@@ -50,12 +52,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .putString("favorite_city", city)
             .apply()
 
+        android.util.Log.d("ROADFLOW1", "saveFavoriteChoice: canton=$canton allRadars.size=${_allRadars.value.size}")
+
         val filtered = filterForCanton(_allRadars.value, canton)
+        android.util.Log.d("ROADFLOW1", "saveFavoriteChoice: filtered.size=${filtered.size}")
+
         _displayedRadars.value = filtered
         _uiList.value = buildUiList(filtered)
         selectedCanton.value = canton
 
         showWelcomeDialog.value = false
+
+        android.util.Log.d("ROADFLOW1", "saveFavoriteChoice: uiList.size=${_uiList.value.size}")
     }
 
     private val _uiList = MutableStateFlow<List<RadarListItem>>(emptyList())
@@ -75,7 +83,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            isLoading.collect { android.util.Log.d("ROADFLOW", "isLoading=$it uiList.size=${_uiList.value.size}") }
+            isLoading.collect { android.util.Log.d("ROADFLOW1", "isLoading=$it uiList.size=${_uiList.value.size}") }
         }
         viewModelScope.launch {
             currentDate.value = java.time.LocalDate.now()
@@ -106,61 +114,92 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshData() {
+        if (isRefreshing.value) return
+
+        viewModelScope.launch {
+            isRefreshing.value = true
+            canPullToRefresh.value = false
+
+            loadDataInternal()
+
+            val cachedToday = withContext(Dispatchers.IO) { parser.isCachedForToday() }
+            canPullToRefresh.value = !cachedToday
+            isRefreshing.value = false
+        }
+    }
+
     fun loadData() {
         viewModelScope.launch {
             isLoading.value = true
-            try {
-                var firstEmit = true
-                parser.parseAllLocationsAsFlow().collect { partialRadars ->
-                    _allRadars.value = partialRadars
-                    parser.updateCache(partialRadars)
+            loadDataInternal()
 
-                    if (firstEmit) {
-                        if (!showWelcomeDialog.value) {
-                            val filtered = withContext(Dispatchers.Default) {
-                                filterForCanton(partialRadars, selectedCanton.value)
-                            }
-                            _displayedRadars.value = filtered
-                            _uiList.value = buildUiList(filtered)
+            val cachedToday = withContext(Dispatchers.IO) { parser.isCachedForToday() }
+            canPullToRefresh.value = !cachedToday
+        }
+    }
+
+    private suspend fun loadDataInternal() {
+        try {
+            var firstEmit = true
+            parser.parseAllLocationsAsFlow(favoriteCanton = selectedCanton.value).collect { partialRadars ->
+                android.util.Log.d("ROADFLOW1", "loadData emit: size=${partialRadars.size} firstEmit=$firstEmit showWelcomeDialog=${showWelcomeDialog.value} selectedCanton=${selectedCanton.value}")
+
+                _allRadars.value = partialRadars
+                parser.updateCache(partialRadars)
+
+                if (firstEmit) {
+                    if (!showWelcomeDialog.value) {
+                        val filtered = withContext(Dispatchers.Default) {
+                            filterForCanton(partialRadars, selectedCanton.value)
                         }
-                        currentDate.value = java.time.LocalDate.now()
-                        isLoading.value = false
-                        firstEmit = false
+                        android.util.Log.d("ROADFLOW1", "loadData firstEmit filtered.size=${filtered.size}")
+                        _displayedRadars.value = filtered
+                        _uiList.value = buildUiList(filtered)
                     } else {
-                        if (!showWelcomeDialog.value) {
-                            filteringJob?.cancel()
+                        android.util.Log.d("ROADFLOW1", "loadData firstEmit SKIPPED because showWelcomeDialog=true")
+                    }
+                    currentDate.value = java.time.LocalDate.now()
+                    isLoading.value = false
+                    firstEmit = false
+                } else {
+                    if (!showWelcomeDialog.value) {
+                        filteringJob?.cancel()
 
-                            filteringJob = viewModelScope.launch(Dispatchers.Default) {
-                                val filtered = filterForCanton(partialRadars, selectedCanton.value)
-                                if (filtered != _displayedRadars.value) {
-                                    withContext(Dispatchers.Main) {
-                                        _displayedRadars.value = filtered
-                                        _uiList.value = buildUiList(filtered)
-                                    }
+                        filteringJob = viewModelScope.launch(Dispatchers.Default) {
+                            val filtered = filterForCanton(partialRadars, selectedCanton.value)
+                            android.util.Log.d("ROADFLOW1", "loadData laterEmit filtered.size=${filtered.size} equalsCurrentDisplayed=${filtered == _displayedRadars.value}")
+                            if (filtered != _displayedRadars.value) {
+                                withContext(Dispatchers.Main) {
+                                    _displayedRadars.value = filtered
+                                    _uiList.value = buildUiList(filtered)
+                                    android.util.Log.d("ROADFLOW1", "loadData laterEmit APPLIED uiList.size=${_uiList.value.size}")
                                 }
                             }
                         }
+                    } else {
+                        android.util.Log.d("ROADFLOW1", "loadData laterEmit SKIPPED because showWelcomeDialog=true")
                     }
                 }
-            } catch (e: NoInternetWithCacheException) {
-                _allRadars.value = e.cachedRadars
-                parser.updateCache(e.cachedRadars)
-
-                filteringJob?.cancel()
-                filteringJob = viewModelScope.launch(Dispatchers.Default) {
-                    val filtered = filterForCanton(e.cachedRadars, selectedCanton.value)
-                    withContext(Dispatchers.Main) {
-                        _displayedRadars.value = filtered
-                        _uiList.value = buildUiList(filtered)
-                    }
-                }
-                currentDate.value = java.time.LocalDate.now()
-                showNoInternet.value = true
-                isLoading.value = false
-            } catch (_: Exception) {
-                showNoInternet.value = true
-                isLoading.value = false
             }
+        } catch (e: NoInternetWithCacheException) {
+            _allRadars.value = e.cachedRadars
+            parser.updateCache(e.cachedRadars)
+
+            filteringJob?.cancel()
+            filteringJob = viewModelScope.launch(Dispatchers.Default) {
+                val filtered = filterForCanton(e.cachedRadars, selectedCanton.value)
+                withContext(Dispatchers.Main) {
+                    _displayedRadars.value = filtered
+                    _uiList.value = buildUiList(filtered)
+                }
+            }
+            currentDate.value = java.time.LocalDate.now()
+            showNoInternet.value = true
+            isLoading.value = false
+        } catch (_: Exception) {
+            showNoInternet.value = true
+            isLoading.value = false
         }
     }
 }

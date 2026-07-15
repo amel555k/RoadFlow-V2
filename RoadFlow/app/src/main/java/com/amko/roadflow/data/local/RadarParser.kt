@@ -47,7 +47,12 @@ class RadarParser(
         private val DATE_PATTERN = Regex("""([0-9]{1,2})[.\s]+([0-9]{1,2})[.\s]+([0-9]{4})""")
     }
 
-    suspend fun parseAllLocationsAsFlow(): kotlinx.coroutines.flow.Flow<List<RadarData>> =
+    fun isCachedForToday(): Boolean {
+        if (!filePath.exists()) return false
+        val lastModified = LocalDate.ofEpochDay(filePath.lastModified() / 86400000L)
+        return lastModified == LocalDate.now()
+    }
+    suspend fun parseAllLocationsAsFlow(favoriteCanton: Canton? = null): kotlinx.coroutines.flow.Flow<List<RadarData>> =
         kotlinx.coroutines.flow.flow {
             val todayDate = LocalDate.now()
 
@@ -76,7 +81,9 @@ class RadarParser(
                 accumulated.addAll(firebaseData)
                 emit(accumulated.sortedWith(compareByDescending<RadarData> { it.city }
                     .thenByDescending { it.pageDate ?: LocalDateTime.MIN }))
-                val locationGroups = RadarConfig.locations.filter { !it.fromFirebase }
+                val locationGroups = RadarConfig.locations
+                    .filter { !it.fromFirebase }
+                    .sortedBy { if (favoriteCanton != null && it.canton == favoriteCanton) 0 else 1 }
 
                 for (location in locationGroups) {
                     val deferredList = location.possibleIds.map { id ->
