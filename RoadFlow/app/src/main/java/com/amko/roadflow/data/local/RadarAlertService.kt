@@ -35,9 +35,16 @@ class RadarAlertService(private val context: Context) {
     private var textToSpeech: TextToSpeech? = null
     private var isTtsReady = false
     private var useFallbackEnglish = false
+    private var requestedLanguageIsEnglish = false
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
+
+    private val soundPrefs = context.getSharedPreferences("sound_settings", Context.MODE_PRIVATE)
+
+    private fun isVibrationEnabled(): Boolean = soundPrefs.getBoolean("vibration_enabled", true)
+    private fun isTtsEnabled(): Boolean = soundPrefs.getBoolean("tts_enabled", true)
+    private fun isEnglishSelected(): Boolean = soundPrefs.getString("tts_language", "BOSNIAN") == "ENGLISH"
 
     private val _speedLimit = MutableStateFlow(0)
     val speedLimit: StateFlow<Int> = _speedLimit.asStateFlow()
@@ -62,21 +69,38 @@ class RadarAlertService(private val context: Context) {
                     textToSpeech?.setAudioAttributes(audioAttributes)
                 }
 
-                val localeBalkan = Locale("hr", "HR")
-                val result = textToSpeech?.setLanguage(localeBalkan)
-
-                if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
-                    isTtsReady = true
-                    useFallbackEnglish = false
-                } else {
-                    val fallbackResult = textToSpeech?.setLanguage(Locale.US)
-                    if (fallbackResult != TextToSpeech.LANG_MISSING_DATA && fallbackResult != TextToSpeech.LANG_NOT_SUPPORTED) {
-                        isTtsReady = true
-                        useFallbackEnglish = true
-                    }
-                }
+                applyTtsLanguage(isEnglishSelected())
             }
         }, googleTtsEngine)
+    }
+
+    private fun applyTtsLanguage(englishRequested: Boolean) {
+        requestedLanguageIsEnglish = englishRequested
+
+        if (englishRequested) {
+            val result = textToSpeech?.setLanguage(Locale.US)
+            if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                isTtsReady = true
+                useFallbackEnglish = true
+                return
+            }
+        }
+
+        val localeBalkan = Locale("hr", "HR")
+        val result = textToSpeech?.setLanguage(localeBalkan)
+
+        if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+            isTtsReady = true
+            useFallbackEnglish = false
+        } else {
+            val fallbackResult = textToSpeech?.setLanguage(Locale.US)
+            if (fallbackResult != TextToSpeech.LANG_MISSING_DATA && fallbackResult != TextToSpeech.LANG_NOT_SUPPORTED) {
+                isTtsReady = true
+                useFallbackEnglish = true
+            } else {
+                isTtsReady = false
+            }
+        }
     }
 
     private fun requestAudioFocus(): Boolean {
@@ -113,24 +137,30 @@ class RadarAlertService(private val context: Context) {
     }
 
     private fun speakZoneEntry(speedLimit: Int, isStacionaran: Boolean, speedKmh: Double) {
-        if (!isTtsReady) {
+        if (!isTtsEnabled() || !isTtsReady) {
             startAlertLoop(speedKmh)
             return
         }
+
+        if (requestedLanguageIsEnglish != isEnglishSelected()) {
+            applyTtsLanguage(isEnglishSelected())
+        }
+
+        requestAudioFocus()
 
         requestAudioFocus()
 
         val message = if (useFallbackEnglish) {
             val cameraType = if (isStacionaran) "Stationary camera" else "Mobile camera"
             if (speedLimit > 0) {
-                "$cameraType nearby, slow down, speed limit $speedLimit kilometers per hour."
+                "$cameraType nearby, speed limit $speedLimit kilometers per hour."
             } else {
                 "$cameraType nearby, slow down."
             }
         } else {
             val cameraType = if (isStacionaran) "Stacionarna kamera" else "Mobilna kamera"
             if (speedLimit > 0) {
-                "$cameraType u blizini, usporite, ograničenje $speedLimit kilometara na sat."
+                "$cameraType u blizini, ograničenje $speedLimit kilometara na sat."
             } else {
                 "$cameraType u blizini, usporite."
             }
@@ -144,14 +174,13 @@ class RadarAlertService(private val context: Context) {
             override fun onStart(utteranceId: String?) {}
             override fun onDone(utteranceId: String?) {
                 abandonAudioFocus()
-                startAlertLoop(speedKmh)
+                if (isInsideZone) startAlertLoop(speedKmh)
             }
             override fun onError(utteranceId: String?) {
                 abandonAudioFocus()
-                startAlertLoop(speedKmh)
+                if (isInsideZone) startAlertLoop(speedKmh)
             }
         })
-
         textToSpeech?.speak(message, TextToSpeech.QUEUE_FLUSH, params, "radar_zone_entry")
     }
 
@@ -234,9 +263,10 @@ class RadarAlertService(private val context: Context) {
         lastSpeedKmh = 0.0
         _isInZone.value = false
         _speedLimit.value = 0
+        textToSpeech?.stop()
+        abandonAudioFocus()
         stopAlertLoop()
     }
-
     private fun startAlertLoop(speedKmh: Double) {
         stopAlertLoop()
         val intervalSeconds = getAlertInterval(speedKmh, currentSpeedLimit)
@@ -256,22 +286,24 @@ class RadarAlertService(private val context: Context) {
 
     private fun playBeep() {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vm.defaultVibrator.vibrate(
-                    VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+            if (isVibrationEnabled()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                    vm.defaultVibrator.vibrate(
+                        VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE)
+                    )
                 } else {
                     @Suppress("DEPRECATION")
-                    vibrator.vibrate(500)
+                    val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(500)
+                    }
                 }
             }
-
+            requestAudioFocus()
             mediaPlayer?.let {
                 if (it.isPlaying) it.seekTo(0)
                 else it.start()

@@ -22,7 +22,9 @@ import com.amko.roadflow.presentation.screens.MapScreen
 import com.amko.roadflow.presentation.screens.SettingsScreen
 import com.amko.roadflow.presentation.screens.ThemeSettingsScreen
 import com.amko.roadflow.presentation.screens.WidgetSettingsScreen
+import com.amko.roadflow.presentation.screens.SoundSettingsScreen
 import com.amko.roadflow.presentation.viewmodel.MainViewModel
+import com.amko.roadflow.presentation.viewmodel.SoundViewModel
 import com.amko.roadflow.ui.theme.RoadFlowTheme
 import org.maplibre.android.MapLibre
 import com.amko.roadflow.presentation.screens.HistoryScreen
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val mainViewModel: MainViewModel = viewModel()
                 val historyViewModel: HistoryViewModel = viewModel()
+                val soundViewModel: SoundViewModel = viewModel()
 
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
@@ -120,7 +123,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onNavigateToTheme = { navController.navigate("theme_settings") },
-                            onNavigateToWidget = { navController.navigate("widget_settings") }
+                            onNavigateToWidget = { navController.navigate("widget_settings") },
+                            onNavigateToSound = { navController.navigate("sound_settings") }
                         )
                     }
                     composable("theme_settings") {
@@ -133,6 +137,12 @@ class MainActivity : ComponentActivity() {
                     composable("widget_settings") {
                         WidgetSettingsScreen(
                             mainViewModel = mainViewModel,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    composable("sound_settings") {
+                        SoundSettingsScreen(
+                            soundViewModel = soundViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }

@@ -33,7 +33,8 @@ fun SettingsScreen(
     currentRoute: String?,
     onNavigate: (String) -> Unit,
     onNavigateToTheme: () -> Unit,
-    onNavigateToWidget: () -> Unit
+    onNavigateToWidget: () -> Unit,
+    onNavigateToSound: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -66,6 +67,7 @@ fun SettingsScreen(
             SettingsCard(
                 title = "Izgled",
                 description = "Tema, boje i izgled aplikacije.",
+                iconRes = com.amko.roadflow.R.drawable.ic_theme,
                 onClick = onNavigateToTheme
             )
 
@@ -74,7 +76,16 @@ fun SettingsScreen(
             SettingsCard(
                 title = "Widget",
                 description = "Konfiguriši widget početnog ekrana.",
+                iconRes = com.amko.roadflow.R.drawable.ic_widget,
                 onClick = onNavigateToWidget
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            SettingsCard(
+                title = "Zvukovi",
+                description = "Vibracija, govorna najava i signalizacija radara.",
+                onClick = onNavigateToSound
             )
         }
 
@@ -89,6 +100,7 @@ fun SettingsScreen(
 private fun SettingsCard(
     title: String,
     description: String,
+    iconRes: Int? = null,
     onClick: () -> Unit
 ) {
     Card(
@@ -121,12 +133,21 @@ private fun SettingsCard(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Notifications,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(26.dp)
-                    )
+                    if (iconRes != null) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(id = iconRes),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.Notifications,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
                 }
             }
 

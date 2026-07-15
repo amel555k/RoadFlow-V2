@@ -224,8 +224,8 @@ fun <T> SettingsDropdown(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
             modifier = Modifier
-                .fillMaxWidth(0.8f)
-                .heightIn(max = 400.dp)
+                .fillMaxWidth(0.9f)
+                .heightIn(max = 250.dp)
                 .background(MaterialTheme.colorScheme.surface)
         ) {
             options.forEach { (value, text) ->
