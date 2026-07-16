@@ -2,6 +2,7 @@ package com.amko.roadflow.presentation.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -35,14 +37,22 @@ fun BoxScope.CantonPickerDropdown(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clickable { onDismiss() }
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) { onDismiss() }
     )
     Card(
         modifier = Modifier
             .align(Alignment.TopEnd)
             .padding(top = 100.dp, end = 16.dp)
             .width(220.dp),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(
+            topStart = 0.dp,
+            topEnd = 0.dp,
+            bottomStart = 10.dp,
+            bottomEnd = 10.dp
+        ),
         elevation = CardDefaults.cardElevation(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {

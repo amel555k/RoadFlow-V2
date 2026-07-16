@@ -34,6 +34,7 @@ import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
 import com.amko.roadflow.presentation.screens.SplashScreen
 import com.amko.roadflow.domain.model.Canton
 import androidx.compose.runtime.remember
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private var pendingOpenMap = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
 
@@ -115,6 +117,7 @@ class MainActivity : ComponentActivity() {
                     composable("main") {
                         MainScreen(
                             viewModel = mainViewModel,
+                            themeViewModel = themeViewModel,
                             currentRoute = currentRoute,
                             onNavigate = { route ->
                                 navController.navigate(route) {
@@ -167,7 +170,6 @@ class MainActivity : ComponentActivity() {
                     }
                     composable("theme_settings") {
                         ThemeSettingsScreen(
-                            themeViewModel = themeViewModel,
                             mainViewModel=mainViewModel,
                             onBack = { navController.popBackStack() }
                         )

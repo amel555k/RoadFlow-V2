@@ -24,11 +24,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import com.amko.roadflow.domain.model.Canton
+import com.amko.roadflow.presentation.components.AppDropdown
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-
 @Composable
 fun SplashScreen(
     cantonList: List<Pair<Canton, String>>,
@@ -148,69 +148,28 @@ fun SplashScreen(
                     .fillMaxWidth()
                     .graphicsLayer { translationX = cantonShakeOffset.value }
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onGloballyPositioned { coordinates ->
-                            cantonRowWidth = with(density) { coordinates.size.width.toDp() }
+                AppDropdown(
+                    options = cantonList,
+                    selectedLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: "",
+                    selectedValue = selectedCanton,
+                    placeholder = "Odaberite kanton",
+                    expanded = isCantonDropdownOpen,
+                    onExpandedChange = { opening ->
+                        isCantonDropdownOpen = opening
+                        if (opening) isCityDropdownOpen = false
+                    },
+                    onOptionSelected = { canton ->
+                        if (canton != selectedCanton) {
+                            selectedCity = null
                         }
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(fieldBackground)
-                        .clickable {
-                            val opening = !isCantonDropdownOpen
-                            isCantonDropdownOpen = opening
-                            isCityDropdownOpen = false
-                        }
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = cantonList.firstOrNull { it.first == selectedCanton }?.second
-                            ?: "Odaberite kanton",
-                        fontSize = 14.sp,
-                        color = if (selectedCanton != null) fieldText else fieldTextMuted
-                    )
-                    Text(
-                        text = if (isCantonDropdownOpen) "▲" else "▼",
-                        fontSize = 12.sp,
-                        color = fieldArrow
-                    )
-                }
-
-                if (isCantonDropdownOpen) {
-                    Popup(
-                        alignment = Alignment.TopStart,
-                        offset = IntOffset(0, 130)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .width(cantonRowWidth)
-                                .clip(RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 12.dp, bottomEnd = 12.dp))
-                                .background(fieldBackground)
-                                .heightIn(max = 220.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            cantonList.forEach { (canton, label) ->
-                                Text(
-                                    text = label,
-                                    fontSize = 14.sp,
-                                    color = fieldText,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            if (canton != selectedCanton) {
-                                                selectedCity = null
-                                            }
-                                            selectedCanton = canton
-                                            isCantonDropdownOpen = false
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                        selectedCanton = canton
+                        isCantonDropdownOpen = false
+                    },
+                    fieldBackground = fieldBackground,
+                    fieldText = fieldText,
+                    fieldTextMuted = fieldTextMuted,
+                    fieldArrow = fieldArrow
+                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -228,69 +187,29 @@ fun SplashScreen(
                     .fillMaxWidth()
                     .graphicsLayer { translationX = cityShakeOffset.value }
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onGloballyPositioned { coordinates ->
-                            cityRowWidth = with(density) { coordinates.size.width.toDp() }
+                AppDropdown(
+                    options = cityList.map { it to it },
+                    selectedLabel = selectedCity ?: "",
+                    selectedValue = selectedCity,
+                    placeholder = "Odaberite grad",
+                    expanded = isCityDropdownOpen,
+                    onExpandedChange = { opening ->
+                        if (selectedCanton == null) {
+                            coroutineScope.launch { cantonShakeOffset.shake() }
+                        } else {
+                            isCityDropdownOpen = opening
+                            if (opening) isCantonDropdownOpen = false
                         }
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(fieldBackground)
-                        .clickable {
-                            if (selectedCanton == null) {
-                                coroutineScope.launch { cantonShakeOffset.shake() }
-                            } else {
-                                val opening = !isCityDropdownOpen
-                                isCityDropdownOpen = opening
-                                isCantonDropdownOpen = false
-                            }
-                        }
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = selectedCity ?: "Odaberite grad",
-                        fontSize = 14.sp,
-                        color = if (selectedCity != null) fieldText else fieldTextMuted
-                    )
-                    Text(
-                        text = if (isCityDropdownOpen) "▲" else "▼",
-                        fontSize = 12.sp,
-                        color = fieldArrow
-                    )
-                }
-
-                if (isCityDropdownOpen) {
-                    Popup(
-                        alignment = Alignment.TopStart,
-                        offset = IntOffset(0, 130)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .width(cityRowWidth)
-                                .clip(RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 12.dp, bottomEnd = 12.dp))
-                                .background(fieldBackground)
-                                .heightIn(max = 220.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            cityList.forEach { city ->
-                                Text(
-                                    text = city,
-                                    fontSize = 14.sp,
-                                    color = fieldText,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            selectedCity = city
-                                            isCityDropdownOpen = false
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                    },
+                    onOptionSelected = { city ->
+                        selectedCity = city
+                        isCityDropdownOpen = false
+                    },
+                    fieldBackground = fieldBackground,
+                    fieldText = fieldText,
+                    fieldTextMuted = fieldTextMuted,
+                    fieldArrow = fieldArrow
+                )
             }
         }
 

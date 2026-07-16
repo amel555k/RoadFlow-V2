@@ -65,9 +65,9 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             SettingsCard(
-                title = "Izgled",
-                description = "Tema, boje i izgled aplikacije.",
-                iconRes = com.amko.roadflow.R.drawable.ic_theme,
+                title = "Lične preference",
+                description = "Zadani kanton i grad",
+                iconRes = com.amko.roadflow.R.drawable.ic_list,
                 onClick = onNavigateToTheme
             )
 
@@ -75,7 +75,7 @@ fun SettingsScreen(
 
             SettingsCard(
                 title = "Widget",
-                description = "Konfiguriši widget početnog ekrana.",
+                description = "Konfiguracija widgeta početnog ekrana",
                 iconRes = com.amko.roadflow.R.drawable.ic_widget,
                 onClick = onNavigateToWidget
             )
@@ -84,7 +84,7 @@ fun SettingsScreen(
 
             SettingsCard(
                 title = "Zvukovi",
-                description = "Vibracija, govorna najava i signalizacija radara.",
+                description = "Vibracija, govor i vrsta zvučnog signala",
                 onClick = onNavigateToSound
             )
         }

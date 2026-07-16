@@ -1,12 +1,12 @@
 package com.amko.roadflow.presentation.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amko.roadflow.R
+import com.amko.roadflow.presentation.components.AppDropdown
 import com.amko.roadflow.presentation.viewmodel.SoundViewModel
 import com.amko.roadflow.presentation.viewmodel.TtsLanguage
 
@@ -30,131 +31,132 @@ fun SoundSettingsScreen(
 
     var languageExpanded by remember { mutableStateOf(false) }
 
-    val languageOptions = listOf(
-        TtsLanguage.BOSNIAN to "Bosanski",
-        TtsLanguage.ENGLISH to "Engleski"
-    )
-    val selectedLanguageLabel = languageOptions.firstOrNull { it.first == ttsLanguage }?.second ?: ""
+    BackHandler(enabled = languageExpanded) {
+        languageExpanded = false
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primary)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.back),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(24.dp)
-                    .clickable { onBack() }
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = "Postavke signalizacije",
-                color = MaterialTheme.colorScheme.onPrimary,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+    val languageOptions = remember {
+        listOf(
+            TtsLanguage.BOSNIAN to "Bosanski",
+            TtsLanguage.ENGLISH to "Engleski"
+        )
+    }
 
+    val filteredLanguageOptions = remember(ttsLanguage) {
+        languageOptions.filter { it.first != ttsLanguage }
+    }
+
+    val selectedLanguageLabel =
+        languageOptions.firstOrNull { it.first == ttsLanguage }?.second ?: ""
+
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
-
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            ToggleRow(
-                title = "Vibracija",
-                description = "Uređaj zavibrira pri ulasku u zonu radara i tokom signalizacije.",
-                checked = vibrationEnabled,
-                onCheckedChange = { soundViewModel.setVibrationEnabled(it) }
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            ToggleRow(
-                title = "Govor",
-                description = "Glasovno obavještenje o vrsti kamere i ograničenju brzine.",
-                checked = ttsEnabled,
-                onCheckedChange = { soundViewModel.setTtsEnabled(it) }
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.back),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable { onBack() }
+                )
+                Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "Jezik govora:",
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                    color = if (ttsEnabled)
-                        MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                    else
-                        MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
+                    text = "Postavke signalizacije",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            ) {
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                ToggleRow(
+                    title = "Vibracija",
+                    description = "Uređaj zavibrira pri ulasku u zonu radara i tokom signalizacije.",
+                    checked = vibrationEnabled,
+                    onCheckedChange = { soundViewModel.setVibrationEnabled(it) }
                 )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            color = if (ttsEnabled)
-                                MaterialTheme.colorScheme.surface
-                            else
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .clickable(enabled = ttsEnabled) { languageExpanded = !languageExpanded }
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Spacer(modifier = Modifier.height(20.dp))
+
+                ToggleRow(
+                    title = "Govor",
+                    description = "Glasovno obavještenje o vrsti kamere i ograničenju brzine.",
+                    checked = ttsEnabled,
+                    onCheckedChange = { soundViewModel.setTtsEnabled(it) }
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Column {
                     Text(
-                        text = selectedLanguageLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
+                        text = "Jezik govora:",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(bottom = 8.dp),
                         color = if (ttsEnabled)
-                            MaterialTheme.colorScheme.onSurface
+                            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         else
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                     )
-                    Icon(
-                        imageVector = Icons.Filled.ArrowDropDown,
-                        contentDescription = null,
-                        modifier = Modifier.padding(start = 8.dp),
-                        tint = if (ttsEnabled)
+
+                    AppDropdown(
+                        options = filteredLanguageOptions,
+                        selectedLabel = selectedLanguageLabel,
+                        selectedValue = ttsLanguage,
+                        expanded = languageExpanded,
+                        onExpandedChange = { languageExpanded = it },
+                        onOptionSelected = { lang ->
+                            soundViewModel.setTtsLanguage(lang)
+                            languageExpanded = false
+                        },
+                        fieldBackground = if (ttsEnabled)
+                            MaterialTheme.colorScheme.surface
+                        else
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                        fieldText = if (ttsEnabled)
                             MaterialTheme.colorScheme.onSurface
                         else
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        fieldTextMuted = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        fieldArrow = if (ttsEnabled)
+                            MaterialTheme.colorScheme.onSurface
+                        else
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        enabled = ttsEnabled,
+                        cornerRadius = 8.dp
                     )
                 }
-                DropdownMenu(
-                    expanded = languageExpanded && ttsEnabled,
-                    onDismissRequest = { languageExpanded = false },
+            }
+
+            if (languageExpanded) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.9f)
-                        .background(MaterialTheme.colorScheme.surface)
-                ) {
-                    languageOptions.forEach { (value, text) ->
-                        DropdownMenuItem(
-                            text = { Text(text, color = MaterialTheme.colorScheme.onSurface) },
-                            onClick = {
-                                soundViewModel.setTtsLanguage(value)
-                                languageExpanded = false
-                            }
-                        )
-                    }
-                }
+                        .fillMaxSize()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            languageExpanded = false
+                        }
+                )
             }
         }
     }
