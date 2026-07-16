@@ -5,5 +5,6 @@ data class RadarLocation(
     val possibleIds: List<Int>,
     val canton: Canton,
     val mapEnabled: Boolean = false,
-    val fromFirebase: Boolean = false
+    val fromFirebase: Boolean = false,
+    val parsingEnabled: Boolean = true
 )

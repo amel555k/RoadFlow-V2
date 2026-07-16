@@ -31,6 +31,9 @@ import com.amko.roadflow.presentation.screens.HistoryScreen
 import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
 import androidx.compose.runtime.collectAsState
 import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
+import com.amko.roadflow.presentation.screens.SplashScreen
+import com.amko.roadflow.domain.model.Canton
+import androidx.compose.runtime.remember
 
 class MainActivity : ComponentActivity() {
 
@@ -42,6 +45,10 @@ class MainActivity : ComponentActivity() {
         MapLibre.getInstance(this)
 
         pendingOpenMap.value = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
+
+        val prefs = getSharedPreferences("roadflow_prefs", MODE_PRIVATE)
+        val hasFavoriteChoice = prefs.getString("favorite_canton", null) != null
+        val startDestination = if (hasFavoriteChoice) "main" else "splash"
 
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
@@ -73,7 +80,38 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                NavHost(navController = navController, startDestination = "main") {
+                NavHost(navController = navController, startDestination = startDestination) {
+                    composable("splash") {
+                        val cityToCanton = remember {
+                            com.amko.roadflow.data.local.RadarConfig.locations
+                                .map { it.name to it.canton }
+                        }
+                        val cantonList = remember {
+                            listOf(
+                                Canton.UnskoSanski to "Unsko-sanski kanton",
+                                Canton.Posavski to "Posavski kanton",
+                                Canton.Tuzlanski to "Tuzlanski kanton",
+                                Canton.ZenickoDobojski to "Zeničko-dobojski kanton",
+                                Canton.BosanskoPodrinjski to "Bosansko-podrinjski kanton",
+                                Canton.Srednjobosanski to "Srednjobosanski kanton",
+                                Canton.HercegovackoNeretvanski to "Hercegovačko-neretvanski kanton",
+                                Canton.Zapadnohercegovacki to "Zapadnohercegovački kanton",
+                                Canton.Sarajevo to "Kanton Sarajevo",
+                                Canton.Kanton10 to "Kanton 10",
+                                Canton.BrckoDistrikt to "Brčko distrikt"
+                            )
+                        }
+                        SplashScreen(
+                            cantonList = cantonList,
+                            cityToCanton = cityToCanton,
+                            onSave = { canton, city ->
+                                mainViewModel.saveFavoriteChoice(canton, city)
+                                navController.navigate("main") {
+                                    popUpTo("splash") { inclusive = true }
+                                }
+                            }
+                        )
+                    }
                     composable("main") {
                         MainScreen(
                             viewModel = mainViewModel,

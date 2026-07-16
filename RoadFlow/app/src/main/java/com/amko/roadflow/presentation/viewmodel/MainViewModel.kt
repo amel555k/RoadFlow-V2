@@ -43,7 +43,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val selectedCanton = MutableStateFlow(initialCanton)
     val currentDate = MutableStateFlow(java.time.LocalDate.now())
 
-    val showWelcomeDialog = MutableStateFlow(savedCantonName == null)
     val canPullToRefresh = MutableStateFlow(true)
 
     fun saveFavoriteChoice(canton: Canton, city: String) {
@@ -60,8 +59,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _displayedRadars.value = filtered
         _uiList.value = buildUiList(filtered)
         selectedCanton.value = canton
-
-        showWelcomeDialog.value = false
 
         android.util.Log.d("ROADFLOW1", "saveFavoriteChoice: uiList.size=${_uiList.value.size}")
     }
@@ -143,42 +140,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try {
             var firstEmit = true
             parser.parseAllLocationsAsFlow(favoriteCanton = selectedCanton.value).collect { partialRadars ->
-                android.util.Log.d("ROADFLOW1", "loadData emit: size=${partialRadars.size} firstEmit=$firstEmit showWelcomeDialog=${showWelcomeDialog.value} selectedCanton=${selectedCanton.value}")
+                android.util.Log.d("ROADFLOW1", "loadData emit: size=${partialRadars.size} firstEmit=$firstEmit selectedCanton=${selectedCanton.value}")
 
                 _allRadars.value = partialRadars
                 parser.updateCache(partialRadars)
 
                 if (firstEmit) {
-                    if (!showWelcomeDialog.value) {
-                        val filtered = withContext(Dispatchers.Default) {
-                            filterForCanton(partialRadars, selectedCanton.value)
-                        }
-                        android.util.Log.d("ROADFLOW1", "loadData firstEmit filtered.size=${filtered.size}")
-                        _displayedRadars.value = filtered
-                        _uiList.value = buildUiList(filtered)
-                    } else {
-                        android.util.Log.d("ROADFLOW1", "loadData firstEmit SKIPPED because showWelcomeDialog=true")
+                    val filtered = withContext(Dispatchers.Default) {
+                        filterForCanton(partialRadars, selectedCanton.value)
                     }
+                    android.util.Log.d("ROADFLOW1", "loadData firstEmit filtered.size=${filtered.size}")
+                    _displayedRadars.value = filtered
+                    _uiList.value = buildUiList(filtered)
                     currentDate.value = java.time.LocalDate.now()
                     isLoading.value = false
                     firstEmit = false
                 } else {
-                    if (!showWelcomeDialog.value) {
-                        filteringJob?.cancel()
+                    filteringJob?.cancel()
 
-                        filteringJob = viewModelScope.launch(Dispatchers.Default) {
-                            val filtered = filterForCanton(partialRadars, selectedCanton.value)
-                            android.util.Log.d("ROADFLOW1", "loadData laterEmit filtered.size=${filtered.size} equalsCurrentDisplayed=${filtered == _displayedRadars.value}")
-                            if (filtered != _displayedRadars.value) {
-                                withContext(Dispatchers.Main) {
-                                    _displayedRadars.value = filtered
-                                    _uiList.value = buildUiList(filtered)
-                                    android.util.Log.d("ROADFLOW1", "loadData laterEmit APPLIED uiList.size=${_uiList.value.size}")
-                                }
+                    filteringJob = viewModelScope.launch(Dispatchers.Default) {
+                        val filtered = filterForCanton(partialRadars, selectedCanton.value)
+                        android.util.Log.d("ROADFLOW1", "loadData laterEmit filtered.size=${filtered.size} equalsCurrentDisplayed=${filtered == _displayedRadars.value}")
+                        if (filtered != _displayedRadars.value) {
+                            withContext(Dispatchers.Main) {
+                                _displayedRadars.value = filtered
+                                _uiList.value = buildUiList(filtered)
+                                android.util.Log.d("ROADFLOW1", "loadData laterEmit APPLIED uiList.size=${_uiList.value.size}")
                             }
                         }
-                    } else {
-                        android.util.Log.d("ROADFLOW1", "loadData laterEmit SKIPPED because showWelcomeDialog=true")
                     }
                 }
             }

@@ -82,7 +82,7 @@ class RadarParser(
                 emit(accumulated.sortedWith(compareByDescending<RadarData> { it.city }
                     .thenByDescending { it.pageDate ?: LocalDateTime.MIN }))
                 val locationGroups = RadarConfig.locations
-                    .filter { !it.fromFirebase }
+                    .filter { !it.fromFirebase && it.parsingEnabled}
                     .sortedBy { if (favoriteCanton != null && it.canton == favoriteCanton) 0 else 1 }
 
                 for (location in locationGroups) {

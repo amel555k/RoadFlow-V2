@@ -48,10 +48,8 @@ fun MainScreen(
     val selectedCanton by viewModel.selectedCanton.collectAsState()
     val showNoInternet by viewModel.showNoInternet.collectAsState()
     val currentDate by viewModel.currentDate.collectAsState()
-    val showWelcomeDialog by viewModel.showWelcomeDialog.collectAsState()
 
-    android.util.Log.d("ROADFLOW1", "MainScreen recompose: flatList.size=${flatList.size} isLoading=$isLoading showWelcomeDialog=$showWelcomeDialog")
-
+    android.util.Log.d("ROADFLOW1", "MainScreen recompose: flatList.size=${flatList.size} isLoading=$isLoading")
     val cityList = remember {
         com.amko.roadflow.data.local.RadarConfig.locations
             .map { it.name }
@@ -103,8 +101,7 @@ fun MainScreen(
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
         .statusBarsPadding()) {
 
-        if (!showWelcomeDialog) {
-            Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
 
                 Row(
                     modifier = Modifier
@@ -254,22 +251,11 @@ fun MainScreen(
                 )
             }
 
-            if (showNoInternet) {
-                NoConnectionDialog(
-                    title = "Nema internet konekcije",
-                    message = "Molimo provjerite da li su uključeni WiFi ili mobilni podaci.",
-                    onDismiss = { viewModel.showNoInternet.value = false }
-                )
-            }
-        }
-
-        if (showWelcomeDialog) {
-            com.amko.roadflow.presentation.components.WelcomeDialog(
-                cantonList = cantonList,
-                cityList = cityList,
-                onSave = { canton, city ->
-                    viewModel.saveFavoriteChoice(canton, city)
-                }
+        if (showNoInternet) {
+            NoConnectionDialog(
+                title = "Nema internet konekcije",
+                message = "Molimo provjerite da li su uključeni WiFi ili mobilni podaci.",
+                onDismiss = { viewModel.showNoInternet.value = false }
             )
         }
     }
