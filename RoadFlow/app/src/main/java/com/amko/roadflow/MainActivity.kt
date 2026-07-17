@@ -56,18 +56,26 @@ class MainActivity : ComponentActivity() {
             val themeViewModel: ThemeViewModel = viewModel()
             val themeMode by themeViewModel.themeMode.collectAsState()
 
-            RoadFlowTheme(appTheme = themeMode) {
-                val navController = rememberNavController()
-                navControllerRef = navController
+            val navController = rememberNavController()
+            navControllerRef = navController
 
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentRoute = navBackStackEntry?.destination?.route
+
+            RoadFlowTheme(appTheme = if (currentRoute == "splash") com.amko.roadflow.ui.theme.AppTheme.DARK else themeMode) {
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
                 val mainViewModel: MainViewModel = viewModel()
                 val historyViewModel: HistoryViewModel = viewModel()
                 val soundViewModel: SoundViewModel = viewModel()
 
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = navBackStackEntry?.destination?.route
+                LaunchedEffect(currentRoute) {
+                    requestedOrientation = if (currentRoute == "map") {
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    } else {
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                }
 
                 val shouldOpenMap by pendingOpenMap
 

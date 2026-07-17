@@ -51,40 +51,82 @@ private val bottomNavItems = listOf(
 @Composable
 fun BottomNavBar(
     currentRoute: String?,
-    onNavigate: (String) -> Unit
+    onNavigate: (String) -> Unit,
+    isVertical: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.primary)
-            .navigationBarsPadding()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly
-    ) {
-        bottomNavItems.forEach { item ->
-            val isSelected = currentRoute == item.route
+    if (isVertical) {
+        Column(
+            modifier = modifier
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.primary)
+                .navigationBarsPadding()
+                .padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.SpaceEvenly
+        ) {
+            bottomNavItems.forEach { item ->
+                val isSelected = currentRoute == item.route
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .clickable { onNavigate(item.route) }
-                    .padding(horizontal = 20.dp, vertical = 4.dp)
-            ) {
-                Icon(
-                    painter = painterResource(
-                        id = if (isSelected) item.filledIcon else item.outlineIcon
-                    ),
-                    contentDescription = item.label,
-                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
-                    modifier = Modifier.size(26.dp)
-                )
-                Text(
-                    text = item.label,
-                    fontSize = 12.sp,
-                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .width(64.dp)
+                        .clickable { onNavigate(item.route) }
+                        .padding(horizontal = 4.dp, vertical = 12.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            id = if (isSelected) item.filledIcon else item.outlineIcon
+                        ),
+                        contentDescription = item.label,
+                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = item.label,
+                        fontSize = 10.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    } else {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.primary)
+                .navigationBarsPadding()
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            bottomNavItems.forEach { item ->
+                val isSelected = currentRoute == item.route
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .clickable { onNavigate(item.route) }
+                        .padding(horizontal = 20.dp, vertical = 4.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            id = if (isSelected) item.filledIcon else item.outlineIcon
+                        ),
+                        contentDescription = item.label,
+                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Text(
+                        text = item.label,
+                        fontSize = 12.sp,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
             }
         }
     }

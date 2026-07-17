@@ -15,7 +15,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +45,10 @@ import com.amko.roadflow.presentation.viewmodel.RadarListItem
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import java.time.format.DateTimeFormatter
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -108,7 +111,17 @@ fun MainScreen(
             Canton.BrckoDistrikt to "Brčko distrikt"
         )
     }
+    var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                nowTick = System.currentTimeMillis()
+                delay(2 * 60 * 1000L)
+            }
+        }
+    }
     val canPullToRefresh by viewModel.canPullToRefresh.collectAsState()
 
     val selectedCantonLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: ""

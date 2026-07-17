@@ -18,11 +18,10 @@ import androidx.compose.ui.unit.sp
 import com.amko.roadflow.domain.model.RadarData
 
 @Composable
-fun RadarItem(radar: RadarData, highlightIfActive: Boolean = true) {
-    val isActive = remember(radar.time, highlightIfActive) {
+fun RadarItem(radar: RadarData, highlightIfActive: Boolean = true, nowTick: Long = 0L) {
+    val isActive = remember(nowTick, radar.time, highlightIfActive) {
         highlightIfActive && radar.isActiveAt(com.amko.roadflow.data.local.TimeProvider.nowTime())
     }
-
     Box(
         modifier = Modifier
             .fillMaxWidth()

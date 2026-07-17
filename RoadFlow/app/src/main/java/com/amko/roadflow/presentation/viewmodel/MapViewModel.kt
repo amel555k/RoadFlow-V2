@@ -150,6 +150,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopBackgroundTracking() {
         RadarTrackingService.stop(getApplication())
+
+        val prefs = getApplication<Application>().getSharedPreferences("roadflow_prefs", android.content.Context.MODE_PRIVATE)
+        val isNotificationEnabled = prefs.getBoolean("notification_enabled", false)
+
+        if (isNotificationEnabled) {
+            val serviceIntent = android.content.Intent(getApplication(), com.amko.roadflow.data.local.RadarNotificationService::class.java).apply {
+                action = "UPDATE_CITY"
+            }
+            androidx.core.content.ContextCompat.startForegroundService(getApplication(), serviceIntent)
+        }
     }
 
     private fun getStacionarni() = RadarConfig.coordinates

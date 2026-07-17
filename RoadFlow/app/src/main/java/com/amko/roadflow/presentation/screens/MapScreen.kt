@@ -11,12 +11,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import android.content.res.Configuration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -63,13 +68,38 @@ fun MapScreen(
 
     DisposableEffect(Unit) {
         val activity = context as? android.app.Activity
-        activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val window = activity?.window
+
+        if (window != null) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
 
         onDispose {
-            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (window != null) {
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    window.attributes = window.attributes.apply {
+                        layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                    }
+                }
+                val controller = WindowInsetsControllerCompat(window, window.decorView)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
-
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val coroutineScope = rememberCoroutineScope()
 
@@ -133,6 +163,10 @@ fun MapScreen(
         }
     }
 
+    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -140,12 +174,19 @@ fun MapScreen(
                 permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) {
             viewModel.locationService.startPassiveTracking()
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val backgroundGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                if (!backgroundGranted) {
+                    backgroundPermissionLauncher.launch(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                }
+            }
         }
     }
-
-    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { }
 
     LaunchedEffect(Unit) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
@@ -204,6 +245,9 @@ fun MapScreen(
         label = "button_scale"
     )
 
+    val orientation = LocalConfiguration.current.orientation
+    val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE
+
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -240,6 +284,7 @@ fun MapScreen(
                     .withLatLng(LatLng(lat, lng))
                     .withIconImage(iconId)
                     .withIconSize(1.0f)
+                    .withSymbolSortKey(0f)
                     .withData(com.google.gson.JsonPrimitive(index))
             )
         }
@@ -251,6 +296,7 @@ fun MapScreen(
                     .withIconImage(USER_ICON_ID)
                     .withIconSize(1.2f)
                     .withIconRotate(savedRotate)
+                    .withSymbolSortKey(1000f)
             )
         }
 
@@ -291,6 +337,7 @@ fun MapScreen(
         if (existing != null) {
             existing.latLng = LatLng(loc.latitude, loc.longitude)
             existing.iconRotate = rotation
+            existing.symbolSortKey = 1000f
             sm.update(existing)
         } else {
             userSymbol = sm.create(
@@ -299,9 +346,9 @@ fun MapScreen(
                     .withIconImage(USER_ICON_ID)
                     .withIconSize(1.2f)
                     .withIconRotate(rotation)
+                    .withSymbolSortKey(1000f)
             )
         }
-
         if (!didInitialZoom) {
             didInitialZoom = true
             locationFound = true
@@ -327,13 +374,18 @@ fun MapScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
     ) {
 
-        Box(modifier = Modifier.weight(1f)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .let {
+                    if (isLandscape) it.padding(start = 88.dp) else it.padding(bottom = 80.dp)
+                }
+        ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = {
@@ -456,193 +508,379 @@ fun MapScreen(
                     currentSpeed = currentSpeed,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 80.dp, end = 20.dp)
+                        .padding(
+                            top = if (isLandscape) 20.dp else 40.dp,
+                            end = 20.dp
+                        )
                 )
             }
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = 30.dp),
-                verticalArrangement = Arrangement.spacedBy(15.dp),
-                horizontalAlignment = Alignment.End
-            ) {
-                if (didInitialZoom && locationFound && isGpsEnabled) {
-                    Button(
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 20.dp, bottom = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(15.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    FilterButton(
+                        text = "DANAS",
+                        isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
+                        enabled = !isActiveTracking,
                         onClick = {
-                            coroutineScope.launch {
-                                trackingButtonScale = 0.85f
-                                delay(150)
-                                trackingButtonScale = 1f
+                            viewModel.setFilter(MapViewModel.RadarFilter.TODAY)
+                        }
+                    )
+                    FilterButton(
+                        text = "AKTIVNI",
+                        isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
+                        onClick = {
+                            viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
+                        }
+                    )
 
-                                val map = mapRef ?: return@launch
-                                if (isActiveTracking) {
+                    if (didInitialZoom && locationFound && isGpsEnabled) {
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    trackingButtonScale = 0.85f
+                                    delay(150)
+                                    trackingButtonScale = 1f
 
-                                    viewModel.locationService.stopActiveTracking()
-                                    viewModel.stopBackgroundTracking()
-                                    alertService.stopAlerts()
+                                    val map = mapRef ?: return@launch
+                                    if (isActiveTracking) {
 
-                                    delay(100)
+                                        viewModel.locationService.stopActiveTracking()
+                                        viewModel.stopBackgroundTracking()
+                                        alertService.stopAlerts()
 
-                                    map.animateCamera(
-                                        CameraUpdateFactory.newCameraPosition(
-                                            CameraPosition.Builder()
-                                                .zoom(13.0)
-                                                .tilt(0.0)
-                                                .bearing(0.0)
-                                                .build()
-                                        ), 800
-                                    )
+                                        delay(100)
 
-                                    delay(800)
-                                    viewModel.locationService.startPassiveTracking()
-
-                                } else {
-                                    viewModel.locationService.stopPassiveTracking()
-                                    viewModel.locationService.startActiveTracking()
-                                    viewModel.startBackgroundTracking()
-                                    viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
-
-                                    val loc = viewModel.locationService.location.value
-                                    if (loc != null) {
-                                        alertService.checkProximity(loc)
-                                        val currentLoc = viewModel.locationService.location.value
-                                        isTransitioningToTracking = true
                                         map.animateCamera(
                                             CameraUpdateFactory.newCameraPosition(
                                                 CameraPosition.Builder()
-                                                    .target(currentLoc?.let {
-                                                        LatLng(
-                                                            it.latitude,
-                                                            it.longitude
-                                                        )
-                                                    }
-                                                        ?: map.cameraPosition.target)
-                                                    .zoom(15.0)
+                                                    .zoom(13.0)
                                                     .tilt(0.0)
-                                                    .bearing(userHeading)
+                                                    .bearing(0.0)
                                                     .build()
-                                            ), 500,
-
-                                            object :
-                                                org.maplibre.android.maps.MapLibreMap.CancelableCallback {
-                                                override fun onCancel() {
-                                                    isTransitioningToTracking = false
-                                                }
-
-                                                override fun onFinish() {
-
-                                                    isTransitioningToTracking = false
-                                                }
-                                            }
+                                            ), 800
                                         )
+
+                                        delay(800)
+                                        viewModel.locationService.startPassiveTracking()
+
+                                    } else {
+                                        viewModel.locationService.stopPassiveTracking()
+                                        viewModel.locationService.startActiveTracking()
+                                        viewModel.startBackgroundTracking()
+                                        viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
+
+                                        val loc = viewModel.locationService.location.value
+                                        if (loc != null) {
+                                            alertService.checkProximity(loc)
+                                            val currentLoc = viewModel.locationService.location.value
+                                            isTransitioningToTracking = true
+                                            map.animateCamera(
+                                                CameraUpdateFactory.newCameraPosition(
+                                                    CameraPosition.Builder()
+                                                        .target(currentLoc?.let {
+                                                            LatLng(
+                                                                it.latitude,
+                                                                it.longitude
+                                                            )
+                                                        }
+                                                            ?: map.cameraPosition.target)
+                                                        .zoom(15.0)
+                                                        .tilt(0.0)
+                                                        .bearing(userHeading)
+                                                        .build()
+                                                ), 500,
+
+                                                object :
+                                                    org.maplibre.android.maps.MapLibreMap.CancelableCallback {
+                                                    override fun onCancel() {
+                                                        isTransitioningToTracking = false
+                                                    }
+
+                                                    override fun onFinish() {
+
+                                                        isTransitioningToTracking = false
+                                                    }
+                                                }
+                                            )
+                                        }
                                     }
                                 }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isActiveTracking)
+                                    androidx.compose.ui.graphics.Color(0xFFF44336)
+                                else
+                                    androidx.compose.ui.graphics.Color(0xFFD2F7FF)
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
+                            contentPadding = PaddingValues(horizontal = 30.dp, vertical = 15.dp),
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 140.dp)
+                                .graphicsLayer {
+                                    scaleX = animatedScale
+                                    scaleY = animatedScale
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(
+                                        id = if (isActiveTracking) R.drawable.ic_stop else R.drawable.ic_nav_arrow
+                                    ),
+                                    contentDescription = null,
+                                    tint = if (isActiveTracking)
+                                        androidx.compose.ui.graphics.Color.White
+                                    else
+                                        androidx.compose.ui.graphics.Color(0xFF004E5A),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isActiveTracking) "ZAUSTAVI" else "KRENI",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isActiveTracking)
+                                        androidx.compose.ui.graphics.Color.White
+                                    else
+                                        androidx.compose.ui.graphics.Color(0xFF004E5A)
+                                )
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isActiveTracking)
-                                androidx.compose.ui.graphics.Color(0xFFF44336)
-                            else
-                                androidx.compose.ui.graphics.Color(0xFFD2F7FF)
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
-                        contentPadding = PaddingValues(horizontal = 30.dp, vertical = 15.dp),
-                        modifier = Modifier
-                            .defaultMinSize(minWidth = 140.dp)
-                            .graphicsLayer {
-                                scaleX = animatedScale
-                                scaleY = animatedScale
-                            }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
+                        }
+                    } else if (!isGpsEnabled ||(gpsWasDisabled && !locationFound )) {
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
+                                            as android.location.LocationManager
+                                    val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+
+                                    if (!gpsEnabled) {
+                                        showNoGps = true
+                                    } else {
+                                        showNoGps = false
+                                        val lastKnown = viewModel.locationService.getLastKnownLocation()
+                                        if (lastKnown != null) {
+                                            viewModel.locationService.setInitialLocation(lastKnown)
+                                        }
+                                        viewModel.locationService.startPassiveTracking()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    shape = androidx.compose.foundation.shape.CircleShape
+                                )
                         ) {
                             Icon(
-                                painter = painterResource(
-                                    id = if (isActiveTracking) R.drawable.ic_stop else R.drawable.ic_nav_arrow
-                                ),
+                                painter = painterResource(id = R.drawable.ic_locate),
                                 contentDescription = null,
-                                tint = if (isActiveTracking)
-                                    androidx.compose.ui.graphics.Color.White
-                                else
-                                    androidx.compose.ui.graphics.Color(0xFF004E5A),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (isActiveTracking) "ZAUSTAVI" else "KRENI",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isActiveTracking)
-                                    androidx.compose.ui.graphics.Color.White
-                                else
-                                    androidx.compose.ui.graphics.Color(0xFF004E5A)
+                                tint = androidx.compose.ui.graphics.Color(0xFF004E5A),
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
-                } else if (!isGpsEnabled ||(gpsWasDisabled && !locationFound )) {
-                    IconButton(
-                        onClick = {
-                            coroutineScope.launch {
-                                val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
-                                        as android.location.LocationManager
-                                val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
-
-                                if (!gpsEnabled) {
-                                    showNoGps = true
-                                } else {
-                                    showNoGps = false
-                                    val lastKnown = viewModel.locationService.getLastKnownLocation()
-                                    if (lastKnown != null) {
-                                        viewModel.locationService.setInitialLocation(lastKnown)
-                                    }
-                                    viewModel.locationService.startPassiveTracking()
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(
-                                color = androidx.compose.ui.graphics.Color.White,
-                                shape = androidx.compose.foundation.shape.CircleShape
-                            )
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_locate),
-                            contentDescription = null,
-                            tint = androidx.compose.ui.graphics.Color(0xFF004E5A),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
                 }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 20.dp, bottom = 30.dp),
+                    verticalArrangement = Arrangement.spacedBy(15.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    if (didInitialZoom && locationFound && isGpsEnabled) {
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    trackingButtonScale = 0.85f
+                                    delay(150)
+                                    trackingButtonScale = 1f
 
-                FilterButton(
-                    text = "AKTIVNI",
-                    isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
-                    onClick = {
-                        viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
+                                    val map = mapRef ?: return@launch
+                                    if (isActiveTracking) {
+
+                                        viewModel.locationService.stopActiveTracking()
+                                        viewModel.stopBackgroundTracking()
+                                        alertService.stopAlerts()
+
+                                        delay(100)
+
+                                        map.animateCamera(
+                                            CameraUpdateFactory.newCameraPosition(
+                                                CameraPosition.Builder()
+                                                    .zoom(13.0)
+                                                    .tilt(0.0)
+                                                    .bearing(0.0)
+                                                    .build()
+                                            ), 800
+                                        )
+
+                                        delay(800)
+                                        viewModel.locationService.startPassiveTracking()
+
+                                    } else {
+                                        viewModel.locationService.stopPassiveTracking()
+                                        viewModel.locationService.startActiveTracking()
+                                        viewModel.startBackgroundTracking()
+                                        viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
+
+                                        val loc = viewModel.locationService.location.value
+                                        if (loc != null) {
+                                            alertService.checkProximity(loc)
+                                            val currentLoc = viewModel.locationService.location.value
+                                            isTransitioningToTracking = true
+                                            map.animateCamera(
+                                                CameraUpdateFactory.newCameraPosition(
+                                                    CameraPosition.Builder()
+                                                        .target(currentLoc?.let {
+                                                            LatLng(
+                                                                it.latitude,
+                                                                it.longitude
+                                                            )
+                                                        }
+                                                            ?: map.cameraPosition.target)
+                                                        .zoom(15.0)
+                                                        .tilt(0.0)
+                                                        .bearing(userHeading)
+                                                        .build()
+                                                ), 500,
+
+                                                object :
+                                                    org.maplibre.android.maps.MapLibreMap.CancelableCallback {
+                                                    override fun onCancel() {
+                                                        isTransitioningToTracking = false
+                                                    }
+
+                                                    override fun onFinish() {
+
+                                                        isTransitioningToTracking = false
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isActiveTracking)
+                                    androidx.compose.ui.graphics.Color(0xFFF44336)
+                                else
+                                    androidx.compose.ui.graphics.Color(0xFFD2F7FF)
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
+                            contentPadding = PaddingValues(horizontal = 30.dp, vertical = 15.dp),
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 140.dp)
+                                .graphicsLayer {
+                                    scaleX = animatedScale
+                                    scaleY = animatedScale
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(
+                                        id = if (isActiveTracking) R.drawable.ic_stop else R.drawable.ic_nav_arrow
+                                    ),
+                                    contentDescription = null,
+                                    tint = if (isActiveTracking)
+                                        androidx.compose.ui.graphics.Color.White
+                                    else
+                                        androidx.compose.ui.graphics.Color(0xFF004E5A),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isActiveTracking) "ZAUSTAVI" else "KRENI",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isActiveTracking)
+                                        androidx.compose.ui.graphics.Color.White
+                                    else
+                                        androidx.compose.ui.graphics.Color(0xFF004E5A)
+                                )
+                            }
+                        }
+                    } else if (!isGpsEnabled ||(gpsWasDisabled && !locationFound )) {
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
+                                            as android.location.LocationManager
+                                    val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+
+                                    if (!gpsEnabled) {
+                                        showNoGps = true
+                                    } else {
+                                        showNoGps = false
+                                        val lastKnown = viewModel.locationService.getLastKnownLocation()
+                                        if (lastKnown != null) {
+                                            viewModel.locationService.setInitialLocation(lastKnown)
+                                        }
+                                        viewModel.locationService.startPassiveTracking()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    shape = androidx.compose.foundation.shape.CircleShape
+                                )
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_locate),
+                                contentDescription = null,
+                                tint = androidx.compose.ui.graphics.Color(0xFF004E5A),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
-                )
-                FilterButton(
-                    text = "DANAS",
-                    isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
-                    enabled = !isActiveTracking,
-                    onClick = {
-                        viewModel.setFilter(MapViewModel.RadarFilter.TODAY)
-                    }
-                )
+
+                    FilterButton(
+                        text = "AKTIVNI",
+                        isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
+                        onClick = {
+                            viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
+                        }
+                    )
+                    FilterButton(
+                        text = "DANAS",
+                        isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
+                        enabled = !isActiveTracking,
+                        onClick = {
+                            viewModel.setFilter(MapViewModel.RadarFilter.TODAY)
+                        }
+                    )
 
 
+                }
             }
 
             selectedRadar?.let { radar ->
                 RadarInfoCard(
                     radar = radar,
+                    isVertical = isLandscape,
                     onDismiss = { viewModel.selectRadar(null) },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
+                    modifier = if (isLandscape) {
+                        Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp)
+                    } else {
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(16.dp)
+                    }
                 )
             }
 
@@ -657,7 +895,11 @@ fun MapScreen(
 
         BottomNavBar(
             currentRoute = currentRoute,
-            onNavigate = onNavigate
+            onNavigate = onNavigate,
+            isVertical = isLandscape,
+            modifier = Modifier.align(
+                if (isLandscape) Alignment.CenterStart else Alignment.BottomCenter
+            )
         )
     }
 }

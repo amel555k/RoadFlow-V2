@@ -45,6 +45,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val canPullToRefresh = MutableStateFlow(true)
 
+    val notificationEnabled = MutableStateFlow(prefs.getBoolean("notification_enabled", false))
+
+    fun setNotificationEnabled(enabled: Boolean) {
+        notificationEnabled.value = enabled
+        prefs.edit().putBoolean("notification_enabled", enabled).apply()
+
+        val serviceIntent = android.content.Intent(getApplication(), com.amko.roadflow.data.local.RadarNotificationService::class.java)
+
+        if (enabled) {
+            androidx.core.content.ContextCompat.startForegroundService(getApplication(), serviceIntent)
+        } else {
+            getApplication<Application>().stopService(serviceIntent)
+            val notificationManager = getApplication<Application>().getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            notificationManager.cancel(1001)
+        }
+    }
+
     fun saveFavoriteChoice(canton: Canton, city: String) {
         prefs.edit()
             .putString("favorite_canton", canton.name)
@@ -61,6 +78,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         selectedCanton.value = canton
 
         android.util.Log.d("ROADFLOW1", "saveFavoriteChoice: uiList.size=${_uiList.value.size}")
+
+        if (prefs.getBoolean("notification_enabled", false)) {
+            val serviceIntent = android.content.Intent(getApplication(), com.amko.roadflow.data.local.RadarNotificationService::class.java).apply {
+                action = "UPDATE_CITY"
+            }
+            androidx.core.content.ContextCompat.startForegroundService(getApplication(), serviceIntent)
+        }
     }
 
     private val _uiList = MutableStateFlow<List<RadarListItem>>(emptyList())

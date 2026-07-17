@@ -16,15 +16,16 @@ import com.amko.roadflow.domain.model.RadarData
 fun RadarInfoCard(
     radar: RadarData,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isVertical: Boolean = false
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = if (isVertical) modifier.width(220.dp) else modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF212143)),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
+        Column(modifier = Modifier.padding(if (isVertical) 16.dp else 24.dp)) {
 
             Row(
                 modifier = Modifier
@@ -36,22 +37,13 @@ fun RadarInfoCard(
                 Text(
                     text = radar.city,
                     color = Color.White,
-                    fontSize = 22.sp,
+                    fontSize = if (isVertical) 18.sp else 22.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(onClick = onDismiss) {
                     Text("✕", color = Color.White, fontSize = 24.sp)
                 }
-            }
-
-            if (radar.city.trim().lowercase() != radar.location.trim().lowercase()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = radar.location,
-                    color = Color.White,
-                    fontSize = 18.sp
-                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))

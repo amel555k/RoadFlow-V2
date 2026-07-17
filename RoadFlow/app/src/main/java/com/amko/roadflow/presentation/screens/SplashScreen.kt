@@ -3,41 +3,49 @@ package com.amko.roadflow.presentation.screens
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Dp
 import com.amko.roadflow.domain.model.Canton
 import com.amko.roadflow.presentation.components.AppDropdown
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+
 @Composable
 fun SplashScreen(
     cantonList: List<Pair<Canton, String>>,
     cityToCanton: List<Pair<String, Canton>>,
     onSave: (Canton, String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
+
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val window = (context as android.app.Activity).window
+        val originalStatusBarColor = window.statusBarColor
+        val originalLightStatusBars = androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars
+
+        window.statusBarColor = 0xFF0E1A2B.toInt()
+        androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+
+        onDispose {
+            window.statusBarColor = originalStatusBarColor
+            androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = originalLightStatusBars
+        }
+    }
+
     var selectedCanton by remember { mutableStateOf<Canton?>(null) }
     var selectedCity by remember { mutableStateOf<String?>(null) }
-
     var isCantonDropdownOpen by remember { mutableStateOf(false) }
     var isCityDropdownOpen by remember { mutableStateOf(false) }
 
@@ -86,21 +94,18 @@ fun SplashScreen(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0E1A2B),
-                        Color(0xFF16273D),
-                        Color(0xFF3C7EA8)
-                    )
-                )
-            )
+        modifier = Modifier.fillMaxSize()
     ) {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = com.amko.roadflow.R.drawable.splash_bg),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+        )
+
         Text(
             text = "RoadFlow",
-            fontSize = 42.sp,
+            fontSize = 48.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,
             modifier = Modifier
@@ -136,7 +141,7 @@ fun SplashScreen(
                 }
         ) {
             Text(
-                text = "Odaberite omiljeni kanton",
+                text = "Odaberite vaš kanton",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -175,7 +180,7 @@ fun SplashScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "Odaberite omiljeni grad",
+                text = "Odaberite vaš grad",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White

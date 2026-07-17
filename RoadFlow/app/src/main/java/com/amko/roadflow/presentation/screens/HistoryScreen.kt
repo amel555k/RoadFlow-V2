@@ -43,6 +43,7 @@ fun HistoryScreen(
     currentRoute: String?,
     onNavigate: (String) -> Unit
 ) {
+
     val uiList by viewModel.uiList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedCanton by viewModel.selectedCanton.collectAsState()

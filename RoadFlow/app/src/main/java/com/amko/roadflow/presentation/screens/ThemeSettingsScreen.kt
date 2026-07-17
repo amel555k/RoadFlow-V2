@@ -37,6 +37,7 @@ fun ThemeSettingsScreen(
     onBack: () -> Unit
 ) {
     val currentCanton by mainViewModel.selectedCanton.collectAsState()
+    val notificationEnabled by mainViewModel.notificationEnabled.collectAsState()
 
     val prefs = mainViewModel.getApplication<android.app.Application>()
         .getSharedPreferences("roadflow_prefs", android.content.Context.MODE_PRIVATE)
@@ -173,6 +174,41 @@ fun ThemeSettingsScreen(
                     fieldArrow = MaterialTheme.colorScheme.onSurface,
                     cornerRadius = 8.dp
                 )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Push notifikacija",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Prikaži stalnu notifikaciju sa radarima za odabrani grad",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(
+                        checked = notificationEnabled,
+                        onCheckedChange = { mainViewModel.setNotificationEnabled(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
 
                 Spacer(modifier = Modifier.weight(1f))
 
