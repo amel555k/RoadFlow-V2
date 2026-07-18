@@ -13,7 +13,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
@@ -21,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.luminance
 
 @Composable
 fun <T> AppDropdown(
@@ -35,7 +35,7 @@ fun <T> AppDropdown(
     fieldText: Color,
     fieldTextMuted: Color,
     fieldArrow: Color,
-    selectedItemBackground: Color = fieldArrow.copy(alpha = 0.15f),
+    selectedItemBackground: Color = Color.Unspecified,
     enabled: Boolean = true,
     cornerRadius: Dp = 12.dp,
     fontSize: TextUnit = 14.sp,
@@ -46,6 +46,13 @@ fun <T> AppDropdown(
     val density = LocalDensity.current
     var rowWidth by remember { mutableStateOf(0.dp) }
     val hasSelection = selectedLabel.isNotEmpty()
+    val isAppInDarkTheme = fieldText.luminance() > 0.5f
+
+    val resolvedSelectedBg = if (selectedItemBackground != Color.Unspecified) {
+        selectedItemBackground
+    } else {
+        if (isAppInDarkTheme) fieldArrow.copy(alpha = 0.15f) else Color(0xFFE3F2FD)
+    }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -96,7 +103,20 @@ fun <T> AppDropdown(
                         .heightIn(max = maxDropdownHeight)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    options.forEach { (value, text) ->
+                    val dividerColor = if (isAppInDarkTheme) {
+                        Color.White.copy(alpha = 0.08f)
+                    } else {
+                        Color.Black.copy(alpha = 0.08f)
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(0.5.dp)
+                            .background(dividerColor)
+                    )
+
+                    options.forEachIndexed { index, (value, text) ->
                         val isSelected = value == selectedValue
                         Text(
                             text = text,
@@ -104,10 +124,19 @@ fun <T> AppDropdown(
                             color = fieldText,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(if (isSelected) selectedItemBackground else Color.Transparent)
+                                .background(if (isSelected) resolvedSelectedBg else Color.Transparent)
                                 .clickable { onOptionSelected(value) }
                                 .padding(horizontal = horizontalPadding, vertical = verticalPadding * 0.85f)
                         )
+
+                        if (index < options.lastIndex) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(0.5.dp)
+                                    .background(dividerColor)
+                            )
+                        }
                     }
                 }
             }

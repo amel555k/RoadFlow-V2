@@ -28,11 +28,14 @@ fun SoundSettingsScreen(
     val vibrationEnabled by soundViewModel.vibrationEnabled.collectAsState()
     val ttsEnabled by soundViewModel.ttsEnabled.collectAsState()
     val ttsLanguage by soundViewModel.ttsLanguage.collectAsState()
+    val alertRadius by soundViewModel.alertRadius.collectAsState()
 
     var languageExpanded by remember { mutableStateOf(false) }
+    var radiusExpanded by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = languageExpanded) {
+    BackHandler(enabled = languageExpanded || radiusExpanded) {
         languageExpanded = false
+        radiusExpanded = false
     }
 
     val languageOptions = remember {
@@ -49,6 +52,17 @@ fun SoundSettingsScreen(
     val selectedLanguageLabel =
         languageOptions.firstOrNull { it.first == ttsLanguage }?.second ?: ""
 
+    val radiusOptions = remember {
+        listOf(
+            100 to "100 m",
+            150 to "150 m",
+            200 to "200 m",
+            250 to "250 m"
+        )
+    }
+
+    val selectedRadiusLabel =
+        radiusOptions.firstOrNull { it.first == alertRadius }?.second ?: ""
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -144,20 +158,50 @@ fun SoundSettingsScreen(
                         cornerRadius = 8.dp
                     )
                 }
-            }
 
-            if (languageExpanded) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {
-                            languageExpanded = false
-                        }
-                )
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Column {
+                    Text(
+                        text = "Radijus obavještenja:",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                    )
+
+                    AppDropdown(
+                        options = radiusOptions,
+                        selectedLabel = selectedRadiusLabel,
+                        selectedValue = alertRadius,
+                        expanded = radiusExpanded,
+                        onExpandedChange = { radiusExpanded = it },
+                        onOptionSelected = { radius ->
+                            soundViewModel.setAlertRadius(radius)
+                            radiusExpanded = false
+                        },
+                        fieldBackground = MaterialTheme.colorScheme.surface,
+                        fieldText = MaterialTheme.colorScheme.onSurface,
+                        fieldTextMuted = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        fieldArrow = MaterialTheme.colorScheme.onSurface,
+                        enabled = true,
+                        cornerRadius = 8.dp
+                    )
+                }
             }
+        }
+
+        if (languageExpanded || radiusExpanded) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) {
+                        languageExpanded = false
+                        radiusExpanded = false
+                    }
+            )
         }
     }
 }

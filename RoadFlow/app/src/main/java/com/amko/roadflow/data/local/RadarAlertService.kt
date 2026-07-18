@@ -22,10 +22,6 @@ import java.util.TimerTask
 
 class RadarAlertService(private val context: Context) {
 
-    companion object {
-        const val ALERT_RADIUS_METERS = 200.0
-    }
-
     private var activeRadars: List<RadarData> = emptyList()
     private var isInsideZone = false
     private var currentSpeedLimit = 0
@@ -45,6 +41,7 @@ class RadarAlertService(private val context: Context) {
     private fun isVibrationEnabled(): Boolean = soundPrefs.getBoolean("vibration_enabled", true)
     private fun isTtsEnabled(): Boolean = soundPrefs.getBoolean("tts_enabled", true)
     private fun isEnglishSelected(): Boolean = soundPrefs.getString("tts_language", "BOSNIAN") == "ENGLISH"
+    private fun getAlertRadius(): Double = soundPrefs.getInt("alert_radius", 200).toDouble()
 
     private val _speedLimit = MutableStateFlow(0)
     val speedLimit: StateFlow<Int> = _speedLimit.asStateFlow()
@@ -214,7 +211,7 @@ class RadarAlertService(private val context: Context) {
                 )
                 Pair(radar, results[0].toDouble())
             }
-            .filter { (_, distance) -> distance <= ALERT_RADIUS_METERS }
+            .filter { (_, distance) -> distance <= getAlertRadius() }
             .minByOrNull { (_, distance) -> distance }
 
         if (nearestRadar != null) {

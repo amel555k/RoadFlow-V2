@@ -163,7 +163,7 @@ class LocationTrackingService(private val context: Context) {
         )
     }
 
-    private fun smoothBearing(current: Double, target: Double, factor: Double = 0.35): Double {
+    private fun smoothBearing(current: Double, target: Double, factor: Double = 0.6): Double {
         var diff = target - current
         while (diff > 180) diff -= 360
         while (diff < -180) diff += 360
@@ -206,8 +206,17 @@ class LocationTrackingService(private val context: Context) {
                     SensorManager.getOrientation(rotationMatrix, orientation)
                     deviceOrientation = context.resources.configuration.orientation
                     val azimuth = Math.toDegrees(orientation[0].toDouble())
-                    lastCompassBearing = (azimuth + 360) % 360
-                    _heading.value = lastCompassBearing
+                    val newCompassBearing = (azimuth + 360) % 360
+
+                    var diff = newCompassBearing - _heading.value
+
+                    while (diff > 180) diff -= 360
+                    while (diff < -180) diff += 360
+
+                    if (kotlin.math.abs(diff) > 3.0) {
+                        lastCompassBearing = newCompassBearing
+                        _heading.value = newCompassBearing
+                    }
                 }
             }
 

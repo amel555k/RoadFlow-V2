@@ -52,6 +52,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import com.amko.roadflow.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
@@ -121,6 +123,8 @@ fun MapScreen(
     val selectedRadar by viewModel.selectedRadar.collectAsState()
     var isMapReady by remember { mutableStateOf(false) }
     var userSymbol by remember { mutableStateOf<Symbol?>(null) }
+    var markerAnimator by remember { mutableStateOf<android.animation.ValueAnimator?>(null) }
+    var lastAnimatedLocation by remember { mutableStateOf<android.location.Location?>(null) }
     val hadSavedCameraOnEnter = remember { viewModel.savedCameraLat != null }
     var didInitialZoom by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var isTransitioningToTracking by remember { mutableStateOf(false) }
@@ -128,6 +132,7 @@ fun MapScreen(
     var locationFound by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var gpsWasDisabled by remember { mutableStateOf(false) }
     var isGpsEnabled by remember { mutableStateOf(true) }
+
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -271,56 +276,88 @@ fun MapScreen(
         val savedLatLng = userSymbol?.latLng
         val savedRotate = userSymbol?.iconRotate ?: 0f
 
-        sm.deleteAll()
-        userSymbol = null
+        val totalStartTime = System.currentTimeMillis()
+        android.util.Log.d("MapOptimization", "Započinjem obradu ${activeRadars.size} radara za mapu.")
 
-        activeRadars.forEachIndexed { index, radar ->
-            val lat = radar.latitude ?: return@forEachIndexed
-            val lng = radar.longitude ?: return@forEachIndexed
-            val iconId = if (radar.coordinate?.stacionaran == true)
-                RADAR_ICON_STACIONARNI_ID else RADAR_ICON_ID
-            sm.create(
+        withContext(Dispatchers.Default) {
+            val bgStartTime = System.currentTimeMillis()
+
+            val newSymbolsOptions = activeRadars.mapIndexedNotNull { index, radar ->
+                val lat = radar.latitude ?: return@mapIndexedNotNull null
+                val lng = radar.longitude ?: return@mapIndexedNotNull null
+                val iconId = if (radar.coordinate?.stacionaran == true)
+                    RADAR_ICON_STACIONARNI_ID else RADAR_ICON_ID
+
                 SymbolOptions()
                     .withLatLng(LatLng(lat, lng))
                     .withIconImage(iconId)
                     .withIconSize(1.0f)
                     .withSymbolSortKey(0f)
                     .withData(com.google.gson.JsonPrimitive(index))
-            )
-        }
+            }
 
-        if (savedLatLng != null) {
-            userSymbol = sm.create(
-                SymbolOptions()
-                    .withLatLng(savedLatLng)
-                    .withIconImage(USER_ICON_ID)
-                    .withIconSize(1.2f)
-                    .withIconRotate(savedRotate)
-                    .withSymbolSortKey(1000f)
-            )
-        }
+            val radius = context.getSharedPreferences("sound_settings", android.content.Context.MODE_PRIVATE)
+                .getInt("alert_radius", 200).toDouble()
 
-        val features = activeRadars.mapNotNull { radar ->
-            val lat = radar.latitude ?: return@mapNotNull null
-            val lng = radar.longitude ?: return@mapNotNull null
-            createCircleFeature(lng, lat, 200.0)
+            val features = activeRadars.mapNotNull { radar ->
+                val lat = radar.latitude ?: return@mapNotNull null
+                val lng = radar.longitude ?: return@mapNotNull null
+                createCircleFeature(lng, lat, radius)
+            }
+            val featureCollection = org.maplibre.geojson.FeatureCollection.fromFeatures(features)
+
+            val bgEndTime = System.currentTimeMillis()
+            android.util.Log.d("MapOptimization", "Pozadinska obrada (kreiranje opcija i krugova) trajala: ${bgEndTime - bgStartTime} ms")
+
+            withContext(Dispatchers.Main) {
+                val uiStartTime = System.currentTimeMillis()
+                sm.deleteAll()
+                userSymbol = null
+
+                if (newSymbolsOptions.isNotEmpty()) {
+                    sm.create(newSymbolsOptions)
+                }
+
+                if (savedLatLng != null) {
+                    userSymbol = sm.create(
+                        SymbolOptions()
+                            .withLatLng(savedLatLng)
+                            .withIconImage(USER_ICON_ID)
+                            .withIconSize(1.2f)
+                            .withIconRotate(savedRotate)
+                            .withSymbolSortKey(1000f)
+                    )
+                }
+
+                mapRef?.style?.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(
+                    "radar-zones-source"
+                )?.setGeoJson(featureCollection)
+
+                alertService.setActiveRadars(activeRadars)
+
+                val uiEndTime = System.currentTimeMillis()
+                android.util.Log.d("MapOptimization", "UI iscrtavanje na mapu trajalo: ${uiEndTime - uiStartTime} ms. UKUPNO VRIJEME: ${uiEndTime - totalStartTime} ms")
+            }
         }
-        mapRef?.style?.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(
-            "radar-zones-source"
-        )?.setGeoJson(
-            org.maplibre.geojson.FeatureCollection.fromFeatures(features)
-        )
-        alertService.setActiveRadars(activeRadars)
     }
-
     LaunchedEffect(userLocation) {
         val loc = userLocation ?: return@LaunchedEffect
         if (isActiveTracking) {
             alertService.checkProximity(loc)
         }
     }
-
+    var updateCount by remember { mutableStateOf(0) }
+    var lastLogTime by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled) {
+
+        updateCount++
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastLogTime >= 1000) {
+            android.util.Log.d("MapOptimization", "Senzori su osvježili mapu $updateCount puta u zadnjoj sekundi!")
+            updateCount = 0
+            lastLogTime = currentTime
+        }
+
         val map = mapRef ?: return@LaunchedEffect
         val sm = symbolManager ?: return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
@@ -331,15 +368,9 @@ fun MapScreen(
         map.uiSettings.isRotateGesturesEnabled = !isActiveTracking
         map.uiSettings.isTiltGesturesEnabled = !isActiveTracking
 
-        val existing = userSymbol
-        val rotation =  0f
+        val rotation = 0f
 
-        if (existing != null) {
-            existing.latLng = LatLng(loc.latitude, loc.longitude)
-            existing.iconRotate = rotation
-            existing.symbolSortKey = 1000f
-            sm.update(existing)
-        } else {
+        if (userSymbol == null) {
             userSymbol = sm.create(
                 SymbolOptions()
                     .withLatLng(LatLng(loc.latitude, loc.longitude))
@@ -348,6 +379,39 @@ fun MapScreen(
                     .withIconRotate(rotation)
                     .withSymbolSortKey(1000f)
             )
+            lastAnimatedLocation = loc
+        } else {
+            val locChanged = lastAnimatedLocation == null ||
+                    loc.latitude != lastAnimatedLocation?.latitude ||
+                    loc.longitude != lastAnimatedLocation?.longitude
+
+            if (!locChanged) {
+                userSymbol?.iconRotate = rotation
+                sm.update(userSymbol)
+            } else {
+                lastAnimatedLocation = loc
+                val startLatLng = userSymbol?.latLng ?: LatLng(loc.latitude, loc.longitude)
+                val targetLatLng = LatLng(loc.latitude, loc.longitude)
+
+                userSymbol?.iconRotate = rotation
+
+                markerAnimator?.cancel()
+
+                markerAnimator = android.animation.ValueAnimator.ofObject(
+                    com.amko.roadflow.utils.LatLngEvaluator(),
+                    startLatLng,
+                    targetLatLng
+                ).apply {
+                    duration = 850L
+                    interpolator = android.view.animation.LinearInterpolator()
+                    addUpdateListener { animator ->
+                        val animatedLatLng = animator.animatedValue as LatLng
+                        userSymbol?.latLng = animatedLatLng
+                        sm.update(userSymbol)
+                    }
+                    start()
+                }
+            }
         }
         if (!didInitialZoom) {
             didInitialZoom = true
@@ -393,7 +457,7 @@ fun MapScreen(
                 update = { view ->
                     view.getMapAsync { map ->
                         mapRef = map
-
+                        map.uiSettings.isCompassEnabled = false
                         map.setMinZoomPreference(6.0)
                         map.setMaxZoomPreference(18.0)
 
@@ -490,7 +554,7 @@ fun MapScreen(
                             } else {
                                 map.animateCamera(
                                     CameraUpdateFactory.newLatLngZoom(
-                                        LatLng(43.8563, 18.4131), 12.0
+                                        LatLng(44.15, 17.80), 6.0
                                     )
                                 )
                             }

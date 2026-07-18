@@ -22,6 +22,14 @@ class SoundViewModel(application: Application) : AndroidViewModel(application) {
     private val _ttsLanguage = MutableStateFlow(loadTtsLanguage())
     val ttsLanguage: StateFlow<TtsLanguage> = _ttsLanguage
 
+    private val _alertRadius = MutableStateFlow(prefs.getInt("alert_radius", 200))
+    val alertRadius: StateFlow<Int> = _alertRadius
+
+    fun setAlertRadius(radius: Int) {
+        _alertRadius.value = radius
+        prefs.edit().putInt("alert_radius", radius).apply()
+    }
+
     fun setVibrationEnabled(enabled: Boolean) {
         _vibrationEnabled.value = enabled
         prefs.edit().putBoolean("vibration_enabled", enabled).apply()

@@ -84,6 +84,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                val startTime = System.currentTimeMillis()
+
                 parser.parseAllLocationsAsFlow().collect { }
 
                 val all = parser.getExpandedRadarsForMapAsync()
@@ -96,9 +98,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
                 _activeRadars.value = active + getStacionarni()
                 RadarTrackingService.setActiveRadars(_activeRadars.value)
+
+                val endTime = System.currentTimeMillis()
+                android.util.Log.d("MapOptimization", "loadRadars() ZAVRŠENO. Svi radari: ${all.size}, Za iscrtati (Aktivni + Stacionarni): ${_activeRadars.value.size}. Vrijeme obrade: ${endTime - startTime} ms")
+
                 _isLoading.value = false
             } catch (e: Exception) {
                 _isLoading.value = false
+                android.util.Log.e("MapOptimization", "Greška u loadRadars: ${e.message}")
             }
         }
     }

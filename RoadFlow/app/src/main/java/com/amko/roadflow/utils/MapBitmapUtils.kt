@@ -5,12 +5,14 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import com.amko.roadflow.R
+import android.animation.TypeEvaluator
+import org.maplibre.android.geometry.LatLng
 
 fun createCircleFeature(
     lng: Double,
     lat: Double,
     radiusMeters: Double,
-    points: Int = 64
+    points: Int = 24
 ): org.maplibre.geojson.Feature {
     val km = radiusMeters / 1000.0
     val distanceX = km / (111.320 * Math.cos(Math.toRadians(lat)))
@@ -101,4 +103,13 @@ fun createRadarBitmap(context: android.content.Context, isStacionarni: Boolean):
     canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5, bgPaint)
     canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5, borderPaint)
     return bmp
+}
+
+class LatLngEvaluator : TypeEvaluator<LatLng> {
+    private val result = LatLng()
+    override fun evaluate(fraction: Float, startValue: LatLng, endValue: LatLng): LatLng {
+        result.latitude = startValue.latitude + (endValue.latitude - startValue.latitude) * fraction
+        result.longitude = startValue.longitude + (endValue.longitude - startValue.longitude) * fraction
+        return result
+    }
 }

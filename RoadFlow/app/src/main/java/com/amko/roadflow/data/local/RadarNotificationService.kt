@@ -17,6 +17,7 @@ import com.amko.roadflow.R
 import com.amko.roadflow.domain.model.RadarData
 import kotlinx.coroutines.*
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 class RadarNotificationService : Service() {
 
@@ -27,6 +28,9 @@ class RadarNotificationService : Service() {
     private lateinit var connectivityManager: ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
+    private var currentRadars = emptyList<RadarData>()
+    private var isNoInternetNoCache = false
+
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -34,6 +38,18 @@ class RadarNotificationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (RadarTrackingService.isRunning.value) {
+            startForeground(1002, createLoadingNotification(""))
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
         val favoriteCity = prefs.getString("favorite_city", "") ?: ""
 
@@ -54,9 +70,8 @@ class RadarNotificationService : Service() {
 
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-
                 serviceScope.launch {
-                    fetchAndUpdateNotification()
+                    fetchData()
                 }
             }
         }
@@ -69,13 +84,20 @@ class RadarNotificationService : Service() {
     private fun startPeriodicUpdates() {
         serviceScope.launch {
             while (isActive) {
-                fetchAndUpdateNotification()
+                fetchData()
                 delay(15 * 60 * 1000L)
+            }
+        }
+
+        serviceScope.launch {
+            while (isActive) {
+                delay(60 * 1000L)
+                updateNotification()
             }
         }
     }
 
-    private suspend fun fetchAndUpdateNotification() {
+    private suspend fun fetchData() {
         if (isFetching) return
         isFetching = true
 
@@ -87,40 +109,47 @@ class RadarNotificationService : Service() {
             return
         }
 
-        withContext(Dispatchers.Main) {
-            notificationManager.notify(1001, createLoadingNotification(favoriteCity))
-        }
-
         val firebaseService = FirebaseService()
         val parser = RadarParser(applicationContext, firebaseService)
 
-        var radars = emptyList<RadarData>()
-        var noInternetNoCache = false
-
         try {
             parser.parseAllLocationsAsFlow(null).collect { list ->
-                radars = list
+                currentRadars = list
+                isNoInternetNoCache = false
             }
         } catch (e: NoInternetWithCacheException) {
-            radars = e.cachedRadars
+            currentRadars = e.cachedRadars
+            isNoInternetNoCache = false
         } catch (e: Exception) {
             val cached = parser.getActiveRadarsAsync()
             if (cached.isEmpty()) {
-                noInternetNoCache = true
+                isNoInternetNoCache = true
+                currentRadars = emptyList()
             } else {
-                radars = cached
+                currentRadars = cached
+                isNoInternetNoCache = false
             }
         }
+
+        updateNotification()
+        isFetching = false
+    }
+
+    private suspend fun updateNotification() {
+        val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
+        val favoriteCity = prefs.getString("favorite_city", "") ?: ""
+
+        if (favoriteCity.isBlank()) return
 
         val contentText: String
         val inboxStyle = NotificationCompat.InboxStyle()
 
-        if (noInternetNoCache) {
+        if (isNoInternetNoCache) {
             contentText = "Provjerite internet konekciju"
             inboxStyle.addLine("Podaci nisu dostupni bez interneta.")
             inboxStyle.addLine("Čeka se konekcija da se osvježi...")
         } else {
-            val cityRadars = radars.filter { it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO" }
+            val cityRadars = currentRadars.filter { it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO" }
             val activeRadars = cityRadars.filter { isRadarActiveNow(it.time) }
 
             contentText = if (activeRadars.isEmpty()) {
@@ -131,12 +160,18 @@ class RadarNotificationService : Service() {
                     .minOrNull()
 
                 if (nextStart != null) {
-                    "Trenutno nema radara do ${nextStart.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))}"
+                    "Trenutno nema radara do ${nextStart.format(DateTimeFormatter.ofPattern("HH:mm"))}"
                 } else {
                     "Danas više nema radara"
                 }
             } else {
-                activeRadars.joinToString(", ") { it.location }
+                val activeUntil = activeRadars.mapNotNull { parseEndTime(it.time) }.minOrNull()
+                val prefix = activeRadars.joinToString(", ") { it.location }
+                if (activeUntil != null) {
+                    "$prefix (do ${activeUntil.format(DateTimeFormatter.ofPattern("HH:mm"))})"
+                } else {
+                    prefix
+                }
             }
 
             if (cityRadars.isEmpty()) {
@@ -167,8 +202,9 @@ class RadarNotificationService : Service() {
             .setStyle(inboxStyle)
             .build()
 
-        notificationManager.notify(1001, notification)
-        isFetching = false
+        withContext(Dispatchers.Main) {
+            notificationManager.notify(1001, notification)
+        }
     }
 
     private fun createLoadingNotification(city: String): Notification {
@@ -222,6 +258,20 @@ class RadarNotificationService : Service() {
             null
         }
     }
+
+    private fun parseEndTime(timeStr: String): LocalTime? {
+        return try {
+            val parts = timeStr.split(" do ")
+            if (parts.size == 2) {
+                LocalTime.parse(parts[1].trim())
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
