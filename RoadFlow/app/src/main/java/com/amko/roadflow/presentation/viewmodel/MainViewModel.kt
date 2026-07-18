@@ -35,6 +35,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isLoading = MutableStateFlow(true)
     val showNoInternet = MutableStateFlow(false)
     val isRefreshing = MutableStateFlow(false)
+    val hasError = MutableStateFlow(false)
 
     private val savedCantonName = prefs.getString("favorite_canton", null)
     private val initialCanton = savedCantonName?.let { name ->
@@ -162,6 +163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun loadDataInternal() {
         try {
+            hasError.value = false
             var firstEmit = true
             parser.parseAllLocationsAsFlow(favoriteCanton = selectedCanton.value).collect { partialRadars ->
                 android.util.Log.d("ROADFLOW1", "loadData emit: size=${partialRadars.size} firstEmit=$firstEmit selectedCanton=${selectedCanton.value}")
@@ -212,6 +214,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isLoading.value = false
         } catch (_: Exception) {
             showNoInternet.value = true
+            hasError.value = true
             isLoading.value = false
         }
     }

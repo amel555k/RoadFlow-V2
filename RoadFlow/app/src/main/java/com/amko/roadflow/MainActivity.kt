@@ -191,6 +191,7 @@ class MainActivity : ComponentActivity() {
                     composable("sound_settings") {
                         SoundSettingsScreen(
                             soundViewModel = soundViewModel,
+                            mainViewModel = mainViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }

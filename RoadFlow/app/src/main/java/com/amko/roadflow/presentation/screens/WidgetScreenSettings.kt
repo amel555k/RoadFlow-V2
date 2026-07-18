@@ -35,7 +35,6 @@ fun WidgetSettingsScreen(
     val expandedCity1 = remember { mutableStateOf(false) }
     val expandedCity2 = remember { mutableStateOf(false) }
 
-    // Presreće sistemski Back gest/dugme samo ako je otvoren bilo koji dropdown
     BackHandler(enabled = expandedCity1.value || expandedCity2.value) {
         expandedCity1.value = false
         expandedCity2.value = false
@@ -44,8 +43,8 @@ fun WidgetSettingsScreen(
     LaunchedEffect(Unit) {
         val prefs = mainViewModel.getApplication<android.app.Application>()
             .getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
-        val city1 = prefs.getString("favorite_city_1", "Travnik") ?: "Travnik"
-        val city2 = prefs.getString("favorite_city_2", "Vitez") ?: "Vitez"
+        val city1 = prefs.getString("city1", "Travnik") ?: "Travnik"
+        val city2 = prefs.getString("city2", "Vitez") ?: "Vitez"
         val loaded = Pair(city1, city2)
         selectedCities.value = loaded
         initialCities.value = loaded
@@ -166,8 +165,8 @@ fun WidgetSettingsScreen(
                             val context = mainViewModel.getApplication<android.app.Application>()
                             val prefs = context.getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
                             prefs.edit().apply {
-                                putString("favorite_city_1", selectedCities.value.first)
-                                putString("favorite_city_2", selectedCities.value.second)
+                                putString("city1", selectedCities.value.first)
+                                putString("city2", selectedCities.value.second)
                                 apply()
                             }
 

@@ -20,7 +20,10 @@ class FirebaseService {
         val HISTORY_BASE_URL = "${Secrets.FIREBASE_BASE_URL}history"
     }
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     private var cachedToken: String? = null
 
     private suspend fun getAuthTokenAsync(): String? = withContext(Dispatchers.IO) {
@@ -32,14 +35,20 @@ class FirebaseService {
             val request = Request.Builder().url(authUrl).post(body).build()
             val response = client.newCall(request).execute()
 
+            android.util.Log.d("WidgetDebug", "FirebaseService: getAuthTokenAsync response code=${response.code}")
+
             if (response.isSuccessful) {
                 val content = response.body?.string() ?: return@withContext null
                 val json = JSONObject(content)
                 cachedToken = json.getString("idToken")
+                android.util.Log.d("WidgetDebug", "FirebaseService: token dobijen uspjesno, duzina=${cachedToken?.length}")
                 return@withContext cachedToken
+            } else {
+                val errorBody = response.body?.string() ?: ""
+                android.util.Log.d("WidgetDebug", "FirebaseService: getAuthToken NEUSPJESAN response code=${response.code}, body=$errorBody")
             }
         } catch (e: Exception) {
-            println("[FirebaseService] getAuthToken greška: ${e.message}")
+            android.util.Log.d("WidgetDebug", "FirebaseService: getAuthToken EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
         }
 
         null
@@ -56,13 +65,25 @@ class FirebaseService {
         val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
         val url = getAuthenticatedUrl("$FIREBASE_BASE_URL/$dateStr.json")
 
+        android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync pozivam URL (bez tokena u logu za sigurnost)")
+
         try {
             val request = Request.Builder().url(url).get().build()
             val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext radars
+
+            android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync response code=${response.code}")
+
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string() ?: ""
+                android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync NEUSPJESAN, code=${response.code}, body=$errorBody")
+                return@withContext radars
+            }
 
             val json = response.body?.string()
-            if (json.isNullOrBlank() || json == "null") return@withContext radars
+            if (json.isNullOrBlank() || json == "null") {
+                android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync JSON prazan ili null")
+                return@withContext radars
+            }
 
             val rootObj = JSONObject(json)
 
@@ -108,7 +129,7 @@ class FirebaseService {
                 }
             }
         } catch (e: Exception) {
-            println("[FirebaseService] Error: ${e.message}")
+            android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
         }
 
         radars

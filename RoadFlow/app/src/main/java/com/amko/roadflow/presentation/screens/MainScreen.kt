@@ -66,6 +66,7 @@ fun MainScreen(
     val selectedCanton by viewModel.selectedCanton.collectAsState()
     val showNoInternet by viewModel.showNoInternet.collectAsState()
     val currentDate by viewModel.currentDate.collectAsState()
+    val hasError by viewModel.hasError.collectAsState()
 
     android.util.Log.d("ROADFLOW1", "MainScreen recompose: flatList.size=${flatList.size} isLoading=$isLoading")
     val cityList = remember {
@@ -91,6 +92,21 @@ fun MainScreen(
             if (!granted) {
                 notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+    }
+
+    DisposableEffect(context) {
+        val connectivityManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                if (viewModel.hasError.value && viewModel.uiList.value.isEmpty() && !viewModel.isLoading.value) {
+                    viewModel.loadData()
+                }
+            }
+        }
+        connectivityManager.registerDefaultNetworkCallback(networkCallback)
+        onDispose {
+            connectivityManager.unregisterNetworkCallback(networkCallback)
         }
     }
 
@@ -175,8 +191,19 @@ fun MainScreen(
 
             Box(modifier = Modifier.weight(1f)) {
                 if (isLoading) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Učitavanje..",
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                fontSize = 16.sp
+                            )
+                        }
                     }
                 } else {
                     val listContent: @Composable () -> Unit = {
@@ -188,9 +215,11 @@ fun MainScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "Nema radara za odabrani kanton.",
+                                    text = if (hasError) "Neuspjesno preuzimanje, provjerite internet konekciju" else "Nema radara za odabrani kanton.",
                                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                                    fontSize = 16.sp
+                                    fontSize = 16.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 24.dp)
                                 )
                             }
                         } else {

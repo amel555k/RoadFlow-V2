@@ -53,6 +53,12 @@ class RadarNotificationService : Service() {
         val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
         val favoriteCity = prefs.getString("favorite_city", "") ?: ""
 
+        if (intent?.action == "ACTION_REFRESH") {
+            startForeground(1001, createLoadingNotification(favoriteCity))
+            serviceScope.launch { fetchData() }
+            return START_STICKY
+        }
+
         startForeground(1001, createLoadingNotification(favoriteCity))
 
         if (intent?.action == "UPDATE_CITY") {
@@ -97,43 +103,53 @@ class RadarNotificationService : Service() {
         }
     }
 
-    private suspend fun fetchData() {
-        if (isFetching) return
-        isFetching = true
+        private suspend fun fetchData() {
+            if (isFetching) return
+            isFetching = true
 
-        val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
-        val favoriteCity = prefs.getString("favorite_city", "") ?: ""
+            val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
+            val favoriteCity = prefs.getString("favorite_city", "") ?: ""
 
-        if (favoriteCity.isBlank()) {
+            if (favoriteCity.isBlank()) {
+                isFetching = false
+                return
+            }
+
+            val timeoutJob = serviceScope.launch {
+                delay(5000)
+                if (isFetching) {
+                    withContext(Dispatchers.Main) {
+                        notificationManager.notify(1001, createLoadingNotification(favoriteCity, showRefresh = true))
+                    }
+                }
+            }
+
+            val firebaseService = FirebaseService()
+            val parser = RadarParser(applicationContext, firebaseService)
+
+            try {
+                parser.parseAllLocationsAsFlow(null).collect { list ->
+                    currentRadars = list
+                    isNoInternetNoCache = false
+                }
+            } catch (e: NoInternetWithCacheException) {
+                currentRadars = e.cachedRadars
+                isNoInternetNoCache = false
+            } catch (e: Exception) {
+                val cached = parser.getActiveRadarsAsync()
+                if (cached.isEmpty()) {
+                    isNoInternetNoCache = true
+                    currentRadars = emptyList()
+                } else {
+                    currentRadars = cached
+                    isNoInternetNoCache = false
+                }
+            }
+
+            timeoutJob.cancel()
+            updateNotification()
             isFetching = false
-            return
         }
-
-        val firebaseService = FirebaseService()
-        val parser = RadarParser(applicationContext, firebaseService)
-
-        try {
-            parser.parseAllLocationsAsFlow(null).collect { list ->
-                currentRadars = list
-                isNoInternetNoCache = false
-            }
-        } catch (e: NoInternetWithCacheException) {
-            currentRadars = e.cachedRadars
-            isNoInternetNoCache = false
-        } catch (e: Exception) {
-            val cached = parser.getActiveRadarsAsync()
-            if (cached.isEmpty()) {
-                isNoInternetNoCache = true
-                currentRadars = emptyList()
-            } else {
-                currentRadars = cached
-                isNoInternetNoCache = false
-            }
-        }
-
-        updateNotification()
-        isFetching = false
-    }
 
     private suspend fun updateNotification() {
         val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
@@ -200,6 +216,7 @@ class RadarNotificationService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
             .setStyle(inboxStyle)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
 
         withContext(Dispatchers.Main) {
@@ -207,7 +224,7 @@ class RadarNotificationService : Service() {
         }
     }
 
-    private fun createLoadingNotification(city: String): Notification {
+    private fun createLoadingNotification(city: String, showRefresh: Boolean = false): Notification {
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -215,7 +232,8 @@ class RadarNotificationService : Service() {
             applicationContext, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return NotificationCompat.Builder(applicationContext, "radar_status_channel")
+
+        val builder = NotificationCompat.Builder(applicationContext, "radar_status_channel")
             .setContentTitle(city)
             .setContentText("Učitavanje...")
             .setSmallIcon(R.drawable.ic_notification)
@@ -223,7 +241,20 @@ class RadarNotificationService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
-            .build()
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+
+        if (showRefresh) {
+            val refreshIntent = Intent(applicationContext, RadarNotificationService::class.java).apply {
+                action = "ACTION_REFRESH"
+            }
+            val refreshPendingIntent = PendingIntent.getService(
+                applicationContext, 1, refreshIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(R.drawable.refresh, "Osvježi", refreshPendingIntent)
+        }
+
+        return builder.build()
     }
 
     private fun isRadarActiveNow(timeStr: String): Boolean {

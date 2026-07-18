@@ -149,6 +149,10 @@ class RadarParser(
         }
     }
 
+    suspend fun parseSingleIdWithErrorHandlingAsyncPublic(baseCityName: String, id: Int, mapEnabled: Boolean): List<RadarData> {
+        return parseSingleIdWithErrorHandlingAsync(baseCityName, id, mapEnabled)
+    }
+
     private suspend fun parseSingleIdAsync(baseCityName: String, id: Int, mapEnabled: Boolean): List<RadarData> = withContext(Dispatchers.IO) {
         val radars = mutableListOf<RadarData>()
         val url = "$baseUrl$id"
@@ -460,4 +464,5 @@ class RadarParser(
         val capabilities = cm.getNetworkCapabilities(network) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
+
 }

@@ -17,14 +17,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amko.roadflow.R
 import com.amko.roadflow.presentation.components.AppDropdown
+import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.presentation.viewmodel.SoundViewModel
 import com.amko.roadflow.presentation.viewmodel.TtsLanguage
 
 @Composable
 fun SoundSettingsScreen(
+    mainViewModel: MainViewModel,
     soundViewModel: SoundViewModel,
     onBack: () -> Unit
 ) {
+    val notificationEnabled by mainViewModel.notificationEnabled.collectAsState()
     val vibrationEnabled by soundViewModel.vibrationEnabled.collectAsState()
     val ttsEnabled by soundViewModel.ttsEnabled.collectAsState()
     val ttsLanguage by soundViewModel.ttsLanguage.collectAsState()
@@ -101,6 +104,15 @@ fun SoundSettingsScreen(
             ) {
 
                 Spacer(modifier = Modifier.height(24.dp))
+
+                ToggleRow(
+                    title = "Push notifikacija",
+                    description = "Prikaži stalnu notifikaciju sa radarima za odabrani grad",
+                    checked = notificationEnabled,
+                    onCheckedChange = { mainViewModel.setNotificationEnabled(it) }
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
 
                 ToggleRow(
                     title = "Vibracija",
