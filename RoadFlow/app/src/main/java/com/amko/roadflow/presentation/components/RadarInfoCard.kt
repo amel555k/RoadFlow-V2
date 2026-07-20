@@ -34,13 +34,28 @@ fun RadarInfoCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = radar.city,
-                    color = Color.White,
-                    fontSize = if (isVertical) 18.sp else 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    if (radar.coordinate?.stacionaran == true) {
+                        Text(
+                            text = radar.location,
+                            color = Color.White,
+                            fontSize = if (isVertical) 18.sp else 22.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            text = radar.location,
+                            color = Color.White,
+                            fontSize = if (isVertical) 18.sp else 22.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = radar.city,
+                            color = Color.LightGray,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
                 TextButton(onClick = onDismiss) {
                     Text("✕", color = Color.White, fontSize = 24.sp)
                 }

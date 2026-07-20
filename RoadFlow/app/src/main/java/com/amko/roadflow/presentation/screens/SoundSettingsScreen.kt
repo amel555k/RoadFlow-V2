@@ -90,7 +90,7 @@ fun SoundSettingsScreen(
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "Postavke signalizacije",
+                    text = "Postavke obavještenja",
                     color = MaterialTheme.colorScheme.onPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold

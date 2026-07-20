@@ -103,53 +103,65 @@ class RadarNotificationService : Service() {
         }
     }
 
-        private suspend fun fetchData() {
-            if (isFetching) return
-            isFetching = true
+    private suspend fun fetchData() {
+        if (isFetching) return
+        isFetching = true
 
-            val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
-            val favoriteCity = prefs.getString("favorite_city", "") ?: ""
+        val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
+        val favoriteCity = prefs.getString("favorite_city", "") ?: ""
 
-            if (favoriteCity.isBlank()) {
-                isFetching = false
-                return
-            }
+        if (favoriteCity.isBlank()) {
+            isFetching = false
+            return
+        }
 
-            val timeoutJob = serviceScope.launch {
-                delay(5000)
-                if (isFetching) {
-                    withContext(Dispatchers.Main) {
-                        notificationManager.notify(1001, createLoadingNotification(favoriteCity, showRefresh = true))
-                    }
+        val timeoutJob = serviceScope.launch {
+            delay(5000)
+            if (isFetching) {
+                withContext(Dispatchers.Main) {
+                    notificationManager.notify(1001, createLoadingNotification(favoriteCity, showRefresh = true))
                 }
             }
+        }
 
-            val firebaseService = FirebaseService()
-            val parser = RadarParser(applicationContext, firebaseService)
+        val firebaseService = FirebaseService()
+        val parser = RadarParser(applicationContext, firebaseService)
 
-            try {
+        try {
+            withTimeout(10_000L) {
                 parser.parseAllLocationsAsFlow(null).collect { list ->
                     currentRadars = list
                     isNoInternetNoCache = false
-                }
-            } catch (e: NoInternetWithCacheException) {
-                currentRadars = e.cachedRadars
-                isNoInternetNoCache = false
-            } catch (e: Exception) {
-                val cached = parser.getActiveRadarsAsync()
-                if (cached.isEmpty()) {
-                    isNoInternetNoCache = true
-                    currentRadars = emptyList()
-                } else {
-                    currentRadars = cached
-                    isNoInternetNoCache = false
+                    this@withTimeout.cancel()
                 }
             }
-
-            timeoutJob.cancel()
-            updateNotification()
-            isFetching = false
+        } catch (e: NoInternetWithCacheException) {
+            currentRadars = e.cachedRadars
+            isNoInternetNoCache = false
+        } catch (e: TimeoutCancellationException) {
+            val cached = parser.getActiveRadarsAsync()
+            if (cached.isEmpty()) {
+                isNoInternetNoCache = true
+                currentRadars = emptyList()
+            } else {
+                currentRadars = cached
+                isNoInternetNoCache = false
+            }
+        } catch (e: Exception) {
+            val cached = parser.getActiveRadarsAsync()
+            if (cached.isEmpty()) {
+                isNoInternetNoCache = true
+                currentRadars = emptyList()
+            } else {
+                currentRadars = cached
+                isNoInternetNoCache = false
+            }
         }
+
+        timeoutJob.cancel()
+        updateNotification()
+        isFetching = false
+    }
 
     private suspend fun updateNotification() {
         val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)

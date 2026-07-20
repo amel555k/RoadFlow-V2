@@ -84,8 +84,8 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             SettingsCard(
-                title = "Zvukovi",
-                description = "Vibracija, govor i vrsta zvučnog signala",
+                title = "Obavijesti i signalizacija",
+                description = "Push notifikacije, vibracija, govor i vrsta zvučnog signala",
                 onClick = onNavigateToSound
             )
         }
