@@ -261,8 +261,12 @@ class RadarAlertService(private val context: Context) {
         _isInZone.value = false
         _speedLimit.value = 0
         textToSpeech?.stop()
-        abandonAudioFocus()
         stopAlertLoop()
+        mediaPlayer?.let {
+            if (it.isPlaying) it.stop()
+        }
+        prepareAudio()
+        abandonAudioFocus()
     }
     private fun startAlertLoop(speedKmh: Double) {
         stopAlertLoop()

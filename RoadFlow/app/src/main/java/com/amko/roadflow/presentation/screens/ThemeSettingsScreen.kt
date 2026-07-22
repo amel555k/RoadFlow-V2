@@ -57,11 +57,11 @@ fun ThemeSettingsScreen(
         )
     }
 
-    val initialCanton = currentCanton ?: cantonList.first().first
-    val initialCity = prefs.getString("favorite_city", "") ?: ""
+    var savedCanton by remember { mutableStateOf(currentCanton ?: cantonList.first().first) }
+    var savedCity by remember { mutableStateOf(prefs.getString("favorite_city", "") ?: "") }
 
-    var selectedCanton by remember { mutableStateOf(initialCanton) }
-    var selectedCity by remember { mutableStateOf(initialCity) }
+    var selectedCanton by remember { mutableStateOf(savedCanton) }
+    var selectedCity by remember { mutableStateOf(savedCity) }
 
     val cityList = remember(selectedCanton) {
         RadarConfig.locations
@@ -70,6 +70,7 @@ fun ThemeSettingsScreen(
             .distinct()
             .sorted()
     }
+
     var cantonExpanded by remember { mutableStateOf(false) }
     var cityExpanded by remember { mutableStateOf(false) }
 
@@ -78,7 +79,7 @@ fun ThemeSettingsScreen(
         cityExpanded = false
     }
 
-    val hasChanges = selectedCanton != initialCanton || selectedCity != initialCity
+    val hasChanges = selectedCanton != savedCanton || selectedCity != savedCity
 
     val selectedCantonLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: ""
 
@@ -180,6 +181,8 @@ fun ThemeSettingsScreen(
                     Button(
                         onClick = {
                             mainViewModel.saveFavoriteChoice(selectedCanton, selectedCity)
+                            savedCanton = selectedCanton
+                            savedCity = selectedCity
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)

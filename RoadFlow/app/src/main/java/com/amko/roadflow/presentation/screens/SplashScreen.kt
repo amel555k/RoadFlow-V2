@@ -1,8 +1,11 @@
 package com.amko.roadflow.presentation.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -218,35 +221,38 @@ fun SplashScreen(
             }
         }
 
-        Button(
-            onClick = {
-                val canton = selectedCanton
-                val city = selectedCity
-
-                if (canton == null || city == null) {
-                    coroutineScope.launch {
-                        if (canton == null) launch { cantonShakeOffset.shake() }
-                        if (city == null) launch { cityShakeOffset.shake() }
-                    }
-                } else {
-                    onSave(canton, city)
-                }
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = buttonBackground),
+        AnimatedVisibility(
+            visible = selectedCanton != null && selectedCity != null,
+            enter = fadeIn(animationSpec = tween(durationMillis = 300)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 300)),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 32.dp)
-                .graphicsLayer {
-                    alpha = formAlpha.value
-                    translationY = -formOffsetY.value
-                }
         ) {
-            Text(
-                text = "SAČUVAJ",
-                color = buttonText,
-                fontWeight = FontWeight.Bold
-            )
+            Button(
+                onClick = {
+                    val canton = selectedCanton
+                    val city = selectedCity
+
+                    if (canton != null && city != null) {
+                        onSave(canton, city)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = buttonBackground),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 32.dp)
+                    .graphicsLayer {
+                        alpha = formAlpha.value
+                        translationY = -formOffsetY.value
+                    }
+            ) {
+                Text(
+                    text = "SAČUVAJ",
+                    color = buttonText,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
