@@ -1,11 +1,15 @@
 package com.amko.roadflow.presentation.screens
 
 import android.graphics.Color
+import android.graphics.PointF
+import android.content.res.Configuration
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,7 +18,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import android.content.res.Configuration
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,11 +29,23 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.activity.compose.rememberLauncherForActivityResult
+
+import com.amko.roadflow.R
+import com.amko.roadflow.data.local.RouteResult
+import com.amko.roadflow.data.local.RoutingService
 import com.amko.roadflow.data.local.Secrets.MAP_API_KEY
-import com.amko.roadflow.presentation.components.RadarInfoCard
+import com.amko.roadflow.presentation.components.*
 import com.amko.roadflow.presentation.viewmodel.MapViewModel
+import com.amko.roadflow.utils.createCircleFeature
+import com.amko.roadflow.utils.createRadarBitmap
+import com.amko.roadflow.utils.createUserBitmap
+
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
@@ -40,24 +56,34 @@ import org.maplibre.android.maps.Style
 import org.maplibre.android.plugins.annotation.Symbol
 import org.maplibre.android.plugins.annotation.SymbolManager
 import org.maplibre.android.plugins.annotation.SymbolOptions
-import androidx.activity.compose.rememberLauncherForActivityResult
-import com.amko.roadflow.presentation.components.FilterButton
-import com.amko.roadflow.utils.createUserBitmap
-import com.amko.roadflow.utils.createCircleFeature
-import com.amko.roadflow.utils.createRadarBitmap
-import com.amko.roadflow.presentation.components.SpeedOverlay
-import com.amko.roadflow.presentation.components.NoConnectionDialog
-import com.amko.roadflow.presentation.components.BottomNavBar
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Icon
-import androidx.compose.ui.res.painterResource
-import com.amko.roadflow.R
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
 private const val USER_ICON_ID = "user-icon"
+private const val DESTINATION_ICON_ID = "destination-icon"
+
+private fun createDestinationBitmap(context: android.content.Context): android.graphics.Bitmap {
+    val density = context.resources.displayMetrics.density
+    val size = (32 * density).toInt()
+    val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+    paint.color = android.graphics.Color.parseColor("#E53935")
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(size / 2f, size / 2f, size / 3.5f, paint)
+
+    paint.color = android.graphics.Color.parseColor("#E53935")
+    canvas.drawCircle(size / 2f, size / 2f, size / 7f, paint)
+
+    return bitmap
+}
 
 @Composable
 fun MapScreen(
@@ -66,7 +92,6 @@ fun MapScreen(
     viewModel: MapViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val composeInstanceId = remember { java.util.UUID.randomUUID().toString().take(8) }
 
     DisposableEffect(Unit) {
         val activity = context as? android.app.Activity
@@ -90,7 +115,6 @@ fun MapScreen(
         onDispose {
             if (window != null) {
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
                 WindowCompat.setDecorFitsSystemWindows(window, true)
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                     window.attributes = window.attributes.apply {
@@ -102,6 +126,7 @@ fun MapScreen(
             }
         }
     }
+
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val coroutineScope = rememberCoroutineScope()
 
@@ -133,6 +158,22 @@ fun MapScreen(
     var gpsWasDisabled by remember { mutableStateOf(false) }
     var isGpsEnabled by remember { mutableStateOf(true) }
 
+    var currentRouteResult by remember { mutableStateOf<RouteResult?>(null) }
+    var selectedDestination by remember { mutableStateOf<LatLng?>(null) }
+    var destinationSymbol by remember { mutableStateOf<Symbol?>(null) }
+    var destinationScreenPoint by remember { mutableStateOf<PointF?>(null) }
+    var isCalculatingRoute by remember { mutableStateOf(false) }
+    val routingService = remember { RoutingService() }
+
+    fun updateDestinationScreenPoint() {
+        val dest = selectedDestination
+        val map = mapRef
+        if (dest != null && map != null) {
+            destinationScreenPoint = map.projection.toScreenLocation(dest)
+        } else {
+            destinationScreenPoint = null
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -163,7 +204,6 @@ fun MapScreen(
                 didInitialZoom = false
             }
             isGpsEnabled = gpsEnabled
-
             delay(1000)
         }
     }
@@ -192,25 +232,6 @@ fun MapScreen(
             }
         }
     }
-
-    LaunchedEffect(Unit) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.ACCESS_FINE_LOCATION
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-            val backgroundGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-            if (fineGranted && !backgroundGranted) {
-                backgroundPermissionLauncher.launch(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            }
-        }
-    }
-
 
     LaunchedEffect(Unit) {
         val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
@@ -267,7 +288,8 @@ fun MapScreen(
         }
         lifecycle.addObserver(observer)
         onDispose {
-            lifecycle.removeObserver(observer) }
+            lifecycle.removeObserver(observer)
+        }
     }
 
     LaunchedEffect(activeRadars, styleRef) {
@@ -276,12 +298,7 @@ fun MapScreen(
         val savedLatLng = userSymbol?.latLng
         val savedRotate = userSymbol?.iconRotate ?: 0f
 
-        val totalStartTime = System.currentTimeMillis()
-        android.util.Log.d("MapOptimization", "Započinjem obradu ${activeRadars.size} radara za mapu.")
-
         withContext(Dispatchers.Default) {
-            val bgStartTime = System.currentTimeMillis()
-
             val newSymbolsOptions = activeRadars.mapIndexedNotNull { index, radar ->
                 val lat = radar.latitude ?: return@mapIndexedNotNull null
                 val lng = radar.longitude ?: return@mapIndexedNotNull null
@@ -304,13 +321,9 @@ fun MapScreen(
                 val lng = radar.longitude ?: return@mapNotNull null
                 createCircleFeature(lng, lat, radius)
             }
-            val featureCollection = org.maplibre.geojson.FeatureCollection.fromFeatures(features)
-
-            val bgEndTime = System.currentTimeMillis()
-            android.util.Log.d("MapOptimization", "Pozadinska obrada (kreiranje opcija i krugova) trajala: ${bgEndTime - bgStartTime} ms")
+            val featureCollection = FeatureCollection.fromFeatures(features)
 
             withContext(Dispatchers.Main) {
-                val uiStartTime = System.currentTimeMillis()
                 sm.deleteAll()
                 userSymbol = null
 
@@ -334,35 +347,56 @@ fun MapScreen(
                 )?.setGeoJson(featureCollection)
 
                 alertService.setActiveRadars(activeRadars)
-
-                val uiEndTime = System.currentTimeMillis()
-                android.util.Log.d("MapOptimization", "UI iscrtavanje na mapu trajalo: ${uiEndTime - uiStartTime} ms. UKUPNO VRIJEME: ${uiEndTime - totalStartTime} ms")
             }
         }
     }
+
     LaunchedEffect(userLocation) {
         val loc = userLocation ?: return@LaunchedEffect
         if (isActiveTracking) {
             alertService.checkProximity(loc)
         }
     }
-    var updateCount by remember { mutableStateOf(0) }
-    var lastLogTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled) {
 
-        updateCount++
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastLogTime >= 1000) {
-            android.util.Log.d("MapOptimization", "Senzori su osvježili mapu $updateCount puta u zadnjoj sekundi!")
-            updateCount = 0
-            lastLogTime = currentTime
+    LaunchedEffect(currentRouteResult, styleRef) {
+        val style = styleRef ?: return@LaunchedEffect
+        val routeSource = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>("route-source") ?: return@LaunchedEffect
+
+        val route = currentRouteResult
+        if (route == null || route.coordinates.isEmpty()) {
+            routeSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+        } else {
+            val points = route.coordinates.map { Point.fromLngLat(it.second, it.first) }
+            val lineString = LineString.fromLngLats(points)
+            routeSource.setGeoJson(FeatureCollection.fromFeature(Feature.fromGeometry(lineString)))
         }
+    }
 
+    LaunchedEffect(selectedDestination, symbolManager, isMapReady) {
+        val sm = symbolManager ?: return@LaunchedEffect
+        destinationSymbol?.let { sm.delete(it) }
+        destinationSymbol = null
+
+        val dest = selectedDestination
+        if (dest != null) {
+            destinationSymbol = sm.create(
+                SymbolOptions()
+                    .withLatLng(dest)
+                    .withIconImage(DESTINATION_ICON_ID)
+                    .withIconSize(1.0f)
+                    .withSymbolSortKey(2000f)
+            )
+        }
+        updateDestinationScreenPoint()
+    }
+
+    LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled) {
         val map = mapRef ?: return@LaunchedEffect
         val sm = symbolManager ?: return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
         if (!isMapReady) return@LaunchedEffect
         if (!isGpsEnabled) return@LaunchedEffect
+
         map.uiSettings.isScrollGesturesEnabled = !isActiveTracking
         map.uiSettings.isZoomGesturesEnabled = !isActiveTracking
         map.uiSettings.isRotateGesturesEnabled = !isActiveTracking
@@ -394,7 +428,6 @@ fun MapScreen(
                 val targetLatLng = LatLng(loc.latitude, loc.longitude)
 
                 userSymbol?.iconRotate = rotation
-
                 markerAnimator?.cancel()
 
                 markerAnimator = android.animation.ValueAnimator.ofObject(
@@ -413,6 +446,7 @@ fun MapScreen(
                 }
             }
         }
+
         if (!didInitialZoom) {
             didInitialZoom = true
             locationFound = true
@@ -438,11 +472,7 @@ fun MapScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-    ) {
-
+    Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -452,8 +482,7 @@ fun MapScreen(
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
-                factory = {
-                    mapViewRef },
+                factory = { mapViewRef },
                 update = { view ->
                     view.getMapAsync { map ->
                         mapRef = map
@@ -467,7 +496,12 @@ fun MapScreen(
                             .build()
                         map.setLatLngBoundsForCameraTarget(bihBounds)
 
+                        map.addOnCameraMoveListener {
+                            updateDestinationScreenPoint()
+                        }
+
                         map.addOnCameraIdleListener {
+                            updateDestinationScreenPoint()
                             if (!isMapReady) return@addOnCameraIdleListener
                             val pos = map.cameraPosition
                             val isStaleMap = map !== mapRef
@@ -487,11 +521,12 @@ fun MapScreen(
                             style.addImage(RADAR_ICON_ID, createRadarBitmap(context, false))
                             style.addImage(RADAR_ICON_STACIONARNI_ID, createRadarBitmap(context, true))
                             style.addImage(USER_ICON_ID, createUserBitmap(context))
+                            style.addImage(DESTINATION_ICON_ID, createDestinationBitmap(context))
 
                             style.addSource(
                                 org.maplibre.android.style.sources.GeoJsonSource(
                                     "radar-zones-source",
-                                    org.maplibre.geojson.FeatureCollection.fromFeatures(emptyList())
+                                    FeatureCollection.fromFeatures(emptyList())
                                 )
                             )
 
@@ -513,6 +548,36 @@ fun MapScreen(
                                 }
                             )
 
+                            style.addSource(
+                                org.maplibre.android.style.sources.GeoJsonSource(
+                                    "route-source",
+                                    FeatureCollection.fromFeatures(emptyList())
+                                )
+                            )
+
+                            style.addLayer(
+                                org.maplibre.android.style.layers.LineLayer("route-layer", "route-source").apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#1E88E5")),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineWidth(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(6, 4f),
+                                                org.maplibre.android.style.expressions.Expression.stop(14, 7f),
+                                                org.maplibre.android.style.expressions.Expression.stop(18, 12f)
+                                            )
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineCap(
+                                            org.maplibre.android.style.layers.Property.LINE_CAP_ROUND
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineJoin(
+                                            org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND
+                                        )
+                                    )
+                                }
+                            )
+
                             val sm = SymbolManager(view, map, style).also {
                                 it.iconAllowOverlap = true
                                 it.textAllowOverlap = true
@@ -522,6 +587,11 @@ fun MapScreen(
                             sm.addClickListener { symbol ->
                                 val index = symbol.data?.asInt ?: return@addClickListener false
                                 viewModel.selectRadar(activeRadars.getOrNull(index))
+                                true
+                            }
+
+                            map.addOnMapClickListener {
+                                viewModel.selectRadar(null)
                                 true
                             }
 
@@ -543,14 +613,6 @@ fun MapScreen(
                                             .build()
                                     )
                                 )
-
-                                viewModel.saveCameraState(
-                                    lat = savedLat,
-                                    lng = savedLng,
-                                    zoom = savedZoom,
-                                    tilt = savedTilt,
-                                    bearing = savedBearing
-                                )
                             } else {
                                 map.animateCamera(
                                     CameraUpdateFactory.newLatLngZoom(
@@ -565,6 +627,142 @@ fun MapScreen(
                 }
             )
 
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(
+                        top = if (isLandscape) 20.dp else 50.dp,
+                        start = if (isLandscape) 20.dp else 16.dp,
+                        end = if (isActiveTracking) 90.dp else 16.dp
+                    )
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!isActiveTracking) {
+                    Box(modifier = Modifier.weight(1f, fill = false)) {
+                        LocationSearchBar(
+                            onLocationSelected = { latLng, _ ->
+                                selectedDestination = latLng
+                                currentRouteResult = null
+                                mapRef?.animateCamera(
+                                    CameraUpdateFactory.newCameraPosition(
+                                        CameraPosition.Builder()
+                                            .target(latLng)
+                                            .zoom(15.0)
+                                            .build()
+                                    ), 1000
+                                )
+                            }
+                        )
+                    }
+                }
+
+                if (currentRouteResult != null || isCalculatingRoute) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF004E5A)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isCalculatingRoute) {
+                                Text(
+                                    text = "Izračunavam...",
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else if (currentRouteResult != null) {
+                                val route = currentRouteResult!!
+                                val totalMinutes = (route.durationSeconds / 60).toInt()
+                                val hours = totalMinutes / 60
+                                val remainingMinutes = totalMinutes % 60
+
+                                val timeFormatted = when {
+                                    hours > 0 && remainingMinutes > 0 -> "${hours}h ${remainingMinutes}m"
+                                    hours > 0 -> "${hours}h"
+                                    else -> "${totalMinutes} min"
+                                }
+
+                                val km = String.format("%.1f km", route.distanceMeters / 1000.0)
+
+                                Column {
+                                    Text(
+                                        text = "Ruta: $km",
+                                        color = androidx.compose.ui.graphics.Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = "Vrijeme: $timeFormatted",
+                                        color = androidx.compose.ui.graphics.Color(0xFFD2F7FF),
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                IconButton(
+                                    onClick = {
+                                        selectedDestination = null
+                                        currentRouteResult = null
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Ukloni rutu",
+                                        tint = androidx.compose.ui.graphics.Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!isActiveTracking) {
+                destinationScreenPoint?.let { point ->
+                    val density = LocalContext.current.resources.displayMetrics.density
+                    val xDp = (point.x / density).dp - 16.dp
+                    val yDp = (point.y / density).dp - 48.dp
+
+                    Box(modifier = Modifier.offset(x = xDp, y = yDp)) {
+                        Surface(
+                            onClick = {
+                                selectedDestination = null
+                                currentRouteResult = null
+                                destinationScreenPoint = null
+                            },
+                            shape = CircleShape,
+                            color = androidx.compose.ui.graphics.Color.White,
+                            shadowElevation = 6.dp,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Otkaži destinaciju",
+                                    tint = androidx.compose.ui.graphics.Color(0xFFE53935),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             if (isActiveTracking) {
                 SpeedOverlay(
                     isInRadarZone = isInRadarZone,
@@ -573,7 +771,7 @@ fun MapScreen(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(
-                            top = if (isLandscape) 20.dp else 40.dp,
+                            top = if (isLandscape) 20.dp else 50.dp,
                             end = 20.dp
                         )
                 )
@@ -591,16 +789,12 @@ fun MapScreen(
                         text = "DANAS",
                         isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
                         enabled = !isActiveTracking,
-                        onClick = {
-                            viewModel.setFilter(MapViewModel.RadarFilter.TODAY)
-                        }
+                        onClick = { viewModel.setFilter(MapViewModel.RadarFilter.TODAY) }
                     )
                     FilterButton(
                         text = "AKTIVNI",
                         isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
-                        onClick = {
-                            viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
-                        }
+                        onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE) }
                     )
 
                     if (didInitialZoom && locationFound && isGpsEnabled) {
@@ -613,7 +807,6 @@ fun MapScreen(
 
                                     val map = mapRef ?: return@launch
                                     if (isActiveTracking) {
-
                                         viewModel.locationService.stopActiveTracking()
                                         viewModel.stopBackgroundTracking()
                                         alertService.stopAlerts()
@@ -632,8 +825,32 @@ fun MapScreen(
 
                                         delay(800)
                                         viewModel.locationService.startPassiveTracking()
-
                                     } else {
+                                        val uLoc = userLocation
+                                        val dest = selectedDestination
+                                        if (dest != null && uLoc != null) {
+                                            isCalculatingRoute = true
+                                            val result = routingService.getRoute(
+                                                uLoc.latitude,
+                                                uLoc.longitude,
+                                                dest.latitude,
+                                                dest.longitude
+                                            )
+                                            currentRouteResult = result
+                                            isCalculatingRoute = false
+
+                                            if (result != null && result.coordinates.isNotEmpty()) {
+                                                val boundsBuilder = LatLngBounds.Builder()
+                                                boundsBuilder.include(LatLng(uLoc.latitude, uLoc.longitude))
+                                                result.coordinates.forEach { (lat, lng) ->
+                                                    boundsBuilder.include(LatLng(lat, lng))
+                                                }
+                                                mapRef?.animateCamera(
+                                                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120)
+                                                )
+                                            }
+                                        }
+
                                         viewModel.locationService.stopPassiveTracking()
                                         viewModel.locationService.startActiveTracking()
                                         viewModel.startBackgroundTracking()
@@ -647,29 +864,15 @@ fun MapScreen(
                                             map.animateCamera(
                                                 CameraUpdateFactory.newCameraPosition(
                                                     CameraPosition.Builder()
-                                                        .target(currentLoc?.let {
-                                                            LatLng(
-                                                                it.latitude,
-                                                                it.longitude
-                                                            )
-                                                        }
-                                                            ?: map.cameraPosition.target)
+                                                        .target(currentLoc?.let { LatLng(it.latitude, it.longitude) } ?: map.cameraPosition.target)
                                                         .zoom(15.0)
                                                         .tilt(0.0)
                                                         .bearing(userHeading)
                                                         .build()
                                                 ), 500,
-
-                                                object :
-                                                    org.maplibre.android.maps.MapLibreMap.CancelableCallback {
-                                                    override fun onCancel() {
-                                                        isTransitioningToTracking = false
-                                                    }
-
-                                                    override fun onFinish() {
-
-                                                        isTransitioningToTracking = false
-                                                    }
+                                                object : MapLibreMap.CancelableCallback {
+                                                    override fun onCancel() { isTransitioningToTracking = false }
+                                                    override fun onFinish() { isTransitioningToTracking = false }
                                                 }
                                             )
                                         }
@@ -691,9 +894,7 @@ fun MapScreen(
                                     scaleY = animatedScale
                                 }
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     painter = painterResource(
                                         id = if (isActiveTracking) R.drawable.ic_stop else R.drawable.ic_nav_arrow
@@ -717,7 +918,7 @@ fun MapScreen(
                                 )
                             }
                         }
-                    } else if (!isGpsEnabled ||(gpsWasDisabled && !locationFound )) {
+                    } else if (!isGpsEnabled || (gpsWasDisabled && !locationFound)) {
                         IconButton(
                             onClick = {
                                 coroutineScope.launch {
@@ -741,7 +942,7 @@ fun MapScreen(
                                 .size(56.dp)
                                 .background(
                                     color = androidx.compose.ui.graphics.Color.White,
-                                    shape = androidx.compose.foundation.shape.CircleShape
+                                    shape = CircleShape
                                 )
                         ) {
                             Icon(
@@ -771,7 +972,6 @@ fun MapScreen(
 
                                     val map = mapRef ?: return@launch
                                     if (isActiveTracking) {
-
                                         viewModel.locationService.stopActiveTracking()
                                         viewModel.stopBackgroundTracking()
                                         alertService.stopAlerts()
@@ -790,8 +990,32 @@ fun MapScreen(
 
                                         delay(800)
                                         viewModel.locationService.startPassiveTracking()
-
                                     } else {
+                                        val uLoc = userLocation
+                                        val dest = selectedDestination
+                                        if (dest != null && uLoc != null) {
+                                            isCalculatingRoute = true
+                                            val result = routingService.getRoute(
+                                                uLoc.latitude,
+                                                uLoc.longitude,
+                                                dest.latitude,
+                                                dest.longitude
+                                            )
+                                            currentRouteResult = result
+                                            isCalculatingRoute = false
+
+                                            if (result != null && result.coordinates.isNotEmpty()) {
+                                                val boundsBuilder = LatLngBounds.Builder()
+                                                boundsBuilder.include(LatLng(uLoc.latitude, uLoc.longitude))
+                                                result.coordinates.forEach { (lat, lng) ->
+                                                    boundsBuilder.include(LatLng(lat, lng))
+                                                }
+                                                mapRef?.animateCamera(
+                                                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120)
+                                                )
+                                            }
+                                        }
+
                                         viewModel.locationService.stopPassiveTracking()
                                         viewModel.locationService.startActiveTracking()
                                         viewModel.startBackgroundTracking()
@@ -805,29 +1029,15 @@ fun MapScreen(
                                             map.animateCamera(
                                                 CameraUpdateFactory.newCameraPosition(
                                                     CameraPosition.Builder()
-                                                        .target(currentLoc?.let {
-                                                            LatLng(
-                                                                it.latitude,
-                                                                it.longitude
-                                                            )
-                                                        }
-                                                            ?: map.cameraPosition.target)
+                                                        .target(currentLoc?.let { LatLng(it.latitude, it.longitude) } ?: map.cameraPosition.target)
                                                         .zoom(15.0)
                                                         .tilt(0.0)
                                                         .bearing(userHeading)
                                                         .build()
                                                 ), 500,
-
-                                                object :
-                                                    org.maplibre.android.maps.MapLibreMap.CancelableCallback {
-                                                    override fun onCancel() {
-                                                        isTransitioningToTracking = false
-                                                    }
-
-                                                    override fun onFinish() {
-
-                                                        isTransitioningToTracking = false
-                                                    }
+                                                object : MapLibreMap.CancelableCallback {
+                                                    override fun onCancel() { isTransitioningToTracking = false }
+                                                    override fun onFinish() { isTransitioningToTracking = false }
                                                 }
                                             )
                                         }
@@ -849,9 +1059,7 @@ fun MapScreen(
                                     scaleY = animatedScale
                                 }
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     painter = painterResource(
                                         id = if (isActiveTracking) R.drawable.ic_stop else R.drawable.ic_nav_arrow
@@ -875,7 +1083,7 @@ fun MapScreen(
                                 )
                             }
                         }
-                    } else if (!isGpsEnabled ||(gpsWasDisabled && !locationFound )) {
+                    } else if (!isGpsEnabled || (gpsWasDisabled && !locationFound)) {
                         IconButton(
                             onClick = {
                                 coroutineScope.launch {
@@ -899,7 +1107,7 @@ fun MapScreen(
                                 .size(56.dp)
                                 .background(
                                     color = androidx.compose.ui.graphics.Color.White,
-                                    shape = androidx.compose.foundation.shape.CircleShape
+                                    shape = CircleShape
                                 )
                         ) {
                             Icon(
@@ -914,20 +1122,14 @@ fun MapScreen(
                     FilterButton(
                         text = "AKTIVNI",
                         isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
-                        onClick = {
-                            viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE)
-                        }
+                        onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE) }
                     )
                     FilterButton(
                         text = "DANAS",
                         isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
                         enabled = !isActiveTracking,
-                        onClick = {
-                            viewModel.setFilter(MapViewModel.RadarFilter.TODAY)
-                        }
+                        onClick = { viewModel.setFilter(MapViewModel.RadarFilter.TODAY) }
                     )
-
-
                 }
             }
 

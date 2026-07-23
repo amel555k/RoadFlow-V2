@@ -32,6 +32,7 @@ android {
         buildConfigField("String", "MAP_API_KEY", "\"${localProperties.getProperty("MAP_API_KEY") ?: ""}\"")
         buildConfigField("String", "BASE_URL", "\"${localProperties.getProperty("BASE_URL") ?: ""}\"")
         buildConfigField("String", "Z_M_API_KEY", "\"${localProperties.getProperty("Z_M_API_KEY", "")}\"")
+        buildConfigField("String", "OSRM_URL", "\"${localProperties.getProperty("OSRM_URL", "")}\"")
     }
 
     buildTypes {
