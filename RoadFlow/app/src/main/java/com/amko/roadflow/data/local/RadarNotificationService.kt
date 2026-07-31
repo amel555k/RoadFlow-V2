@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -31,10 +32,24 @@ class RadarNotificationService : Service() {
     private var currentRadars = emptyList<RadarData>()
     private var isNoInternetNoCache = false
 
+    private val notificationDeleteReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            serviceScope.launch {
+                updateNotification()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val filter = IntentFilter(ACTION_NOTIFICATION_DELETED)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(notificationDeleteReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(notificationDeleteReceiver, filter)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -136,10 +151,10 @@ class RadarNotificationService : Service() {
                 }
             }
         } catch (e: NoInternetWithCacheException) {
-            currentRadars = e.cachedRadars
-            isNoInternetNoCache = false
+            currentRadars = if (parser.isCachedForToday()) e.cachedRadars else emptyList()
+            isNoInternetNoCache = currentRadars.isEmpty()
         } catch (e: TimeoutCancellationException) {
-            val cached = parser.getActiveRadarsAsync()
+            val cached = if (parser.isCachedForToday()) parser.getActiveRadarsAsync() else emptyList()
             if (cached.isEmpty()) {
                 isNoInternetNoCache = true
                 currentRadars = emptyList()
@@ -148,7 +163,7 @@ class RadarNotificationService : Service() {
                 isNoInternetNoCache = false
             }
         } catch (e: Exception) {
-            val cached = parser.getActiveRadarsAsync()
+            val cached = if (parser.isCachedForToday()) parser.getActiveRadarsAsync() else emptyList()
             if (cached.isEmpty()) {
                 isNoInternetNoCache = true
                 currentRadars = emptyList()
@@ -180,7 +195,9 @@ class RadarNotificationService : Service() {
             val cityRadars = currentRadars.filter { it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO" }
             val activeRadars = cityRadars.filter { isRadarActiveNow(it.time) }
 
-            contentText = if (activeRadars.isEmpty()) {
+            contentText = if (cityRadars.isEmpty()) {
+                "Danas nema planiranih radara."
+            } else if (activeRadars.isEmpty()) {
                 val now = LocalTime.now()
                 val nextStart = cityRadars
                     .mapNotNull { parseStartTime(it.time) }
@@ -202,9 +219,7 @@ class RadarNotificationService : Service() {
                 }
             }
 
-            if (cityRadars.isEmpty()) {
-                inboxStyle.addLine("Nema planiranih radara za ovaj dan.")
-            } else {
+            if (cityRadars.isNotEmpty()) {
                 cityRadars.forEach { radar ->
                     inboxStyle.addLine("${radar.time} - ${radar.location}")
                 }
@@ -219,7 +234,12 @@ class RadarNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(applicationContext, "radar_status_channel")
+        val deleteIntent = PendingIntent.getBroadcast(
+            applicationContext, 2, Intent(ACTION_NOTIFICATION_DELETED).setPackage(packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(applicationContext, "radar_status_channel")
             .setContentTitle(favoriteCity)
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_notification)
@@ -227,9 +247,15 @@ class RadarNotificationService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
-            .setStyle(inboxStyle)
+            .setDeleteIntent(deleteIntent)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
+
+        val hasExpandableContent = !isNoInternetNoCache && currentRadars.any { it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO" }
+        if (hasExpandableContent) {
+            builder.setStyle(inboxStyle)
+        }
+
+        val notification = builder.build()
 
         withContext(Dispatchers.Main) {
             notificationManager.notify(1001, notification)
@@ -245,6 +271,11 @@ class RadarNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val deleteIntent = PendingIntent.getBroadcast(
+            applicationContext, 2, Intent(ACTION_NOTIFICATION_DELETED).setPackage(packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val builder = NotificationCompat.Builder(applicationContext, "radar_status_channel")
             .setContentTitle(city)
             .setContentText("Učitavanje...")
@@ -253,6 +284,7 @@ class RadarNotificationService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
+            .setDeleteIntent(deleteIntent)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
 
         if (showRefresh) {
@@ -321,7 +353,12 @@ class RadarNotificationService : Service() {
         networkCallback?.let {
             try { connectivityManager.unregisterNetworkCallback(it) } catch (e: Exception) {}
         }
+        try { unregisterReceiver(notificationDeleteReceiver) } catch (e: Exception) {}
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        private const val ACTION_NOTIFICATION_DELETED = "com.amko.roadflow.ACTION_NOTIFICATION_DELETED"
+    }
 }

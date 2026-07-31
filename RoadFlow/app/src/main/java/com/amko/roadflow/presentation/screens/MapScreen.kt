@@ -60,6 +60,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import kotlinx.coroutines.isActive
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
@@ -297,14 +298,17 @@ fun MapScreen(
         styleRef ?: return@LaunchedEffect
         val savedLatLng = userSymbol?.latLng
         val savedRotate = userSymbol?.iconRotate ?: 0f
+        val requestRadars = activeRadars
+        val requestId = System.currentTimeMillis()
 
-        withContext(Dispatchers.Default) {
-            val newSymbolsOptions = activeRadars.mapIndexedNotNull { index, radar ->
+        android.util.Log.d("MapMarkers", "[$requestId] START effect radars=${requestRadars.size} savedUserSymbol=${savedLatLng != null}")
+
+        val newSymbolsOptions = withContext(Dispatchers.Default) {
+            requestRadars.mapIndexedNotNull { index, radar ->
                 val lat = radar.latitude ?: return@mapIndexedNotNull null
                 val lng = radar.longitude ?: return@mapIndexedNotNull null
                 val iconId = if (radar.coordinate?.stacionaran == true)
                     RADAR_ICON_STACIONARNI_ID else RADAR_ICON_ID
-
                 SymbolOptions()
                     .withLatLng(LatLng(lat, lng))
                     .withIconImage(iconId)
@@ -312,42 +316,67 @@ fun MapScreen(
                     .withSymbolSortKey(0f)
                     .withData(com.google.gson.JsonPrimitive(index))
             }
+        }
 
-            val radius = context.getSharedPreferences("sound_settings", android.content.Context.MODE_PRIVATE)
-                .getInt("alert_radius", 200).toDouble()
+        android.util.Log.d("MapMarkers", "[$requestId] built symbolOptions=${newSymbolsOptions.size} (dropped=${requestRadars.size - newSymbolsOptions.size})")
 
-            val features = activeRadars.mapNotNull { radar ->
+        val radius = context.getSharedPreferences("sound_settings", android.content.Context.MODE_PRIVATE)
+            .getInt("alert_radius", 200).toDouble()
+        val featureCollection = withContext(Dispatchers.Default) {
+            val features = requestRadars.mapNotNull { radar ->
                 val lat = radar.latitude ?: return@mapNotNull null
                 val lng = radar.longitude ?: return@mapNotNull null
                 createCircleFeature(lng, lat, radius)
             }
-            val featureCollection = FeatureCollection.fromFeatures(features)
+            FeatureCollection.fromFeatures(features)
+        }
 
-            withContext(Dispatchers.Main) {
-                sm.deleteAll()
-                userSymbol = null
+        if (!isActive) {
+            android.util.Log.w("MapMarkers", "[$requestId] ABORTED coroutine cancelled before apply")
+            return@LaunchedEffect
+        }
+        if (requestRadars !== activeRadars) {
+            android.util.Log.w("MapMarkers", "[$requestId] STALE discarded, activeRadars changed during build (was=${requestRadars.size}, now=${activeRadars.size})")
+            return@LaunchedEffect
+        }
 
-                if (newSymbolsOptions.isNotEmpty()) {
-                    sm.create(newSymbolsOptions)
-                }
+        val beforeCount = sm.annotations.size()
+        sm.deleteAll()
+        userSymbol = null
+        android.util.Log.d("MapMarkers", "[$requestId] deleteAll() beforeCount=$beforeCount")
 
-                if (savedLatLng != null) {
-                    userSymbol = sm.create(
-                        SymbolOptions()
-                            .withLatLng(savedLatLng)
-                            .withIconImage(USER_ICON_ID)
-                            .withIconSize(1.2f)
-                            .withIconRotate(savedRotate)
-                            .withSymbolSortKey(1000f)
-                    )
-                }
+        if (newSymbolsOptions.isNotEmpty()) {
+            val created = sm.create(newSymbolsOptions)
+            android.util.Log.d("MapMarkers", "[$requestId] created radar symbols count=${created.size}")
+        } else {
+            android.util.Log.w("MapMarkers", "[$requestId] NO radar symbols to create, list was empty")
+        }
 
-                mapRef?.style?.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(
-                    "radar-zones-source"
-                )?.setGeoJson(featureCollection)
+        if (savedLatLng != null) {
+            userSymbol = sm.create(
+                SymbolOptions()
+                    .withLatLng(savedLatLng)
+                    .withIconImage(USER_ICON_ID)
+                    .withIconSize(1.2f)
+                    .withIconRotate(savedRotate)
+                    .withSymbolSortKey(1000f)
+            )
+            android.util.Log.d("MapMarkers", "[$requestId] restored userSymbol id=${userSymbol?.id}")
+        } else {
+            android.util.Log.d("MapMarkers", "[$requestId] no previous userSymbol to restore")
+        }
 
-                alertService.setActiveRadars(activeRadars)
-            }
+        mapRef?.style?.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(
+            "radar-zones-source"
+        )?.setGeoJson(featureCollection)
+
+        alertService.setActiveRadars(requestRadars)
+
+        val afterCount = sm.annotations.size()
+        android.util.Log.d("MapMarkers", "[$requestId] DONE afterCount=$afterCount expected=${newSymbolsOptions.size + (if (userSymbol != null) 1 else 0)}")
+
+        if (afterCount != newSymbolsOptions.size + (if (userSymbol != null) 1 else 0)) {
+            android.util.Log.e("MapMarkers", "[$requestId] MISMATCH! symbolManager count doesn't match expected — possible render bug")
         }
     }
 
