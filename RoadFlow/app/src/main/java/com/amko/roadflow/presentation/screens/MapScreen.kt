@@ -158,6 +158,7 @@ fun MapScreen(
     var locationFound by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var gpsWasDisabled by remember { mutableStateOf(false) }
     var isGpsEnabled by remember { mutableStateOf(true) }
+    var showGpsLoading by remember { mutableStateOf(false) }
 
     var currentRouteResult by remember { mutableStateOf<RouteResult?>(null) }
     var selectedDestination by remember { mutableStateOf<LatLng?>(null) }
@@ -185,6 +186,7 @@ fun MapScreen(
             if (!gpsEnabled && isGpsEnabled) {
                 showNoGps = true
                 gpsWasDisabled = true
+                showGpsLoading = false
 
                 if (isActiveTracking) {
                     viewModel.locationService.stopActiveTracking()
@@ -203,6 +205,15 @@ fun MapScreen(
 
                 locationFound = false
                 didInitialZoom = false
+            } else if (gpsEnabled && !isGpsEnabled && gpsWasDisabled && !locationFound) {
+                showNoGps = false
+                showGpsLoading = true
+
+                val lastKnown = viewModel.locationService.getLastKnownLocation()
+                if (lastKnown != null) {
+                    viewModel.locationService.setInitialLocation(lastKnown)
+                }
+                viewModel.locationService.startPassiveTracking()
             }
             isGpsEnabled = gpsEnabled
             delay(1000)
@@ -387,6 +398,12 @@ fun MapScreen(
         }
     }
 
+    LaunchedEffect(locationFound, showGpsLoading) {
+        if (showGpsLoading && locationFound) {
+            showGpsLoading = false
+        }
+    }
+
     LaunchedEffect(currentRouteResult, styleRef) {
         val style = styleRef ?: return@LaunchedEffect
         val routeSource = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>("route-source") ?: return@LaunchedEffect
@@ -494,6 +511,8 @@ fun MapScreen(
                 CameraUpdateFactory.newCameraPosition(
                     CameraPosition.Builder()
                         .target(LatLng(loc.latitude, loc.longitude))
+                        .zoom(map.cameraPosition.zoom)
+                        .tilt(45.0)
                         .bearing(userHeading)
                         .build()
                 ), 300
@@ -894,8 +913,8 @@ fun MapScreen(
                                                 CameraUpdateFactory.newCameraPosition(
                                                     CameraPosition.Builder()
                                                         .target(currentLoc?.let { LatLng(it.latitude, it.longitude) } ?: map.cameraPosition.target)
-                                                        .zoom(15.0)
-                                                        .tilt(0.0)
+                                                        .zoom(17.0)
+                                                        .tilt(45.0)
                                                         .bearing(userHeading)
                                                         .build()
                                                 ), 500,
@@ -959,6 +978,7 @@ fun MapScreen(
                                         showNoGps = true
                                     } else {
                                         showNoGps = false
+                                        showGpsLoading = true
                                         val lastKnown = viewModel.locationService.getLastKnownLocation()
                                         if (lastKnown != null) {
                                             viewModel.locationService.setInitialLocation(lastKnown)
@@ -1059,8 +1079,8 @@ fun MapScreen(
                                                 CameraUpdateFactory.newCameraPosition(
                                                     CameraPosition.Builder()
                                                         .target(currentLoc?.let { LatLng(it.latitude, it.longitude) } ?: map.cameraPosition.target)
-                                                        .zoom(15.0)
-                                                        .tilt(0.0)
+                                                        .zoom(17.0)
+                                                        .tilt(45.0)
                                                         .bearing(userHeading)
                                                         .build()
                                                 ), 500,
@@ -1124,6 +1144,7 @@ fun MapScreen(
                                         showNoGps = true
                                     } else {
                                         showNoGps = false
+                                        showGpsLoading = true
                                         val lastKnown = viewModel.locationService.getLastKnownLocation()
                                         if (lastKnown != null) {
                                             viewModel.locationService.setInitialLocation(lastKnown)
@@ -1185,6 +1206,25 @@ fun MapScreen(
                     message = "Molimo uključite lokaciju kako bi aplikacija mogla raditi.",
                     onDismiss = { showNoGps = false }
                 )
+            }
+
+            if (showGpsLoading) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (isLandscape) 20.dp else 50.dp)
+                        .background(
+                            color = androidx.compose.ui.graphics.Color(0xFF004E5A),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "Učitavanje GPS-a ...",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        fontSize = 14.sp
+                    )
+                }
             }
         }
 

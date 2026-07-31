@@ -140,19 +140,31 @@ class FirebaseService {
         val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
         val url = getAuthenticatedUrl("$HISTORY_BASE_URL/$dateStr.json")
 
+        android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: dateStr=$dateStr url=$HISTORY_BASE_URL/$dateStr.json")
+
         try {
             val request = Request.Builder().url(url).get().build()
             val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext radars
+
+            android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: response code=${response.code}")
+
+            if (!response.isSuccessful) {
+                android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: NEUSPJESAN response, body=${response.body?.string()}")
+                return@withContext radars
+            }
 
             val json = response.body?.string()
+            android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: json length=${json?.length} preview=${json?.take(200)}")
             if (json.isNullOrBlank() || json == "null") return@withContext radars
 
             val rootObj = JSONObject(json)
 
             rootObj.keys().forEach { cityName ->
                 val configLoc = RadarConfig.locations.firstOrNull { it.name == cityName }
-                    ?: return@forEach
+                if (configLoc == null) {
+                    android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: cityName='$cityName' nema match u RadarConfig.locations, preskacem")
+                    return@forEach
+                }
 
                 val itemsArray = rootObj.getJSONArray(cityName)
                 for (i in 0 until itemsArray.length()) {

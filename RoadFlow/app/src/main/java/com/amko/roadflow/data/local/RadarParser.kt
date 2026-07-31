@@ -114,13 +114,47 @@ class RadarParser(
                 .sortedWith(compareByDescending<RadarData> { it.city }
                     .thenByDescending { it.pageDate ?: LocalDateTime.MIN })
 
-            val uniqueRadars = if (deduped.isEmpty()) {
+            android.util.Log.d("ROADFLOW1", "parseAllLocationsAsFlow: deduped.size=${deduped.size} todayDate=$todayDate")
+
+            val citiesWithData = deduped.map { it.city }.toHashSet()
+            val allConfiguredCities = RadarConfig.locations
+                .filter { it.parsingEnabled || it.fromFirebase }
+                .map { it.name }
+                .toHashSet()
+            val missingCities = allConfiguredCities - citiesWithData
+
+            android.util.Log.d("ROADFLOW1", "parseAllLocationsAsFlow: missingCities=$missingCities")
+
+            val historyFallbackRadars = if (missingCities.isNotEmpty()) {
+                val historyRadars = try {
+                    val result = firebaseService.getHistoryRadarsAsync(todayDate)
+                    android.util.Log.d("ROADFLOW1", "parseAllLocationsAsFlow: getHistoryRadarsAsync vratio size=${result.size}")
+                    result
+                } catch (e: Exception) {
+                    android.util.Log.d("ROADFLOW1", "parseAllLocationsAsFlow: getHistoryRadarsAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
+                    emptyList()
+                }
+
+                historyRadars
+                    .filter { it.time != "INFO" && missingCities.contains(it.city) }
+                    .also { android.util.Log.d("ROADFLOW1", "parseAllLocationsAsFlow: history fallback pokrio gradove=${it.map { r -> r.city }.toHashSet()}") }
+            } else {
+                emptyList()
+            }
+
+            val combined = (deduped + historyFallbackRadars)
+                .groupBy { Triple(it.city, it.time, it.location) }
+                .map { it.value.first() }
+                .sortedWith(compareByDescending<RadarData> { it.city }
+                    .thenByDescending { it.pageDate ?: LocalDateTime.MIN })
+
+            val uniqueRadars = if (combined.isEmpty()) {
                 listOf(RadarData(
                     city = "STATUS SISTEMA", time = "INFO",
                     location = "Nisu pronađeni radari za današnji datum (${todayDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}).",
                     pageDate = LocalDateTime.now()
                 ))
-            } else deduped
+            } else combined
 
             emit(uniqueRadars)
 
@@ -134,7 +168,11 @@ class RadarParser(
                     sb.appendLine()
                 }
                 saveToFileAsync(sb.toString())
-                firebaseService.saveRadarsToHistoryAsync(todayDate, uniqueRadars)
+
+                val newDataOnly = deduped
+                if (newDataOnly.isNotEmpty()) {
+                    firebaseService.saveRadarsToHistoryAsync(todayDate, newDataOnly)
+                }
             } else {
                 println("[RadarParser] Podaci nisu sačuvani jer nema aktivnih radara ili internet nije dostupan.")
             }
