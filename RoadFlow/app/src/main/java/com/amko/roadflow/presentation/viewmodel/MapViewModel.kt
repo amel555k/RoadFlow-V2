@@ -13,6 +13,7 @@ import com.amko.roadflow.domain.model.RadarData
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -20,6 +21,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val firebaseService = FirebaseService()
     private val parser = RadarParser(application, firebaseService)
+
+    val symbolMutex = Mutex()
 
     init {
         RadarTrackingService.init(application)

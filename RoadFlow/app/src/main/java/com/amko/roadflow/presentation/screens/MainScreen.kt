@@ -215,7 +215,7 @@ fun MainScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = if (hasError) "Neuspjesno preuzimanje, provjerite internet konekciju" else "Nema radara za odabrani kanton.",
+                                    text = if (hasError) "Neuspješno preuzimanje, provjerite internet konekciju" else "Nema radara za odabrani kanton.",
                                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                     fontSize = 16.sp,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,

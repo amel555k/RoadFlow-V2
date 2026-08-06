@@ -17,6 +17,7 @@ import com.amko.roadflow.MainActivity
 import com.amko.roadflow.R
 import com.amko.roadflow.domain.model.RadarData
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -131,7 +132,7 @@ class RadarNotificationService : Service() {
         }
 
         val timeoutJob = serviceScope.launch {
-            delay(5000)
+            delay(30_000L)
             if (isFetching) {
                 withContext(Dispatchers.Main) {
                     notificationManager.notify(1001, createLoadingNotification(favoriteCity, showRefresh = true))
@@ -143,34 +144,22 @@ class RadarNotificationService : Service() {
         val parser = RadarParser(applicationContext, firebaseService)
 
         try {
-            withTimeout(10_000L) {
-                parser.parseAllLocationsAsFlow(null).collect { list ->
-                    currentRadars = list
-                    isNoInternetNoCache = false
-                    this@withTimeout.cancel()
-                }
+            withTimeout(30_000L) {
+                currentRadars = parser.parseAllLocationsAsFlow(null).first()
+                isNoInternetNoCache = false
             }
         } catch (e: NoInternetWithCacheException) {
             currentRadars = if (parser.isCachedForToday()) e.cachedRadars else emptyList()
             isNoInternetNoCache = currentRadars.isEmpty()
         } catch (e: TimeoutCancellationException) {
             val cached = if (parser.isCachedForToday()) parser.getActiveRadarsAsync() else emptyList()
-            if (cached.isEmpty()) {
-                isNoInternetNoCache = true
-                currentRadars = emptyList()
-            } else {
-                currentRadars = cached
-                isNoInternetNoCache = false
-            }
+            isNoInternetNoCache = cached.isEmpty()
+            currentRadars = cached
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val cached = if (parser.isCachedForToday()) parser.getActiveRadarsAsync() else emptyList()
-            if (cached.isEmpty()) {
-                isNoInternetNoCache = true
-                currentRadars = emptyList()
-            } else {
-                currentRadars = cached
-                isNoInternetNoCache = false
-            }
+            isNoInternetNoCache = cached.isEmpty()
+            currentRadars = cached
         }
 
         timeoutJob.cancel()
@@ -190,17 +179,17 @@ class RadarNotificationService : Service() {
         if (isNoInternetNoCache) {
             contentText = "Provjerite internet konekciju"
             inboxStyle.addLine("Podaci nisu dostupni bez interneta.")
-            inboxStyle.addLine("Čeka se konekcija da se osvježi...")
+            inboxStyle.addLine("Pritisnite 'Osvježi' kada uključite internet.")
         } else {
             val cityRadars = currentRadars.filter { it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO" }
             val activeRadars = cityRadars.filter { isRadarActiveNow(it.time) }
+            val now = LocalTime.now().withNano(0)
 
             contentText = if (cityRadars.isEmpty()) {
                 "Danas nema planiranih radara."
             } else if (activeRadars.isEmpty()) {
-                val now = LocalTime.now()
                 val nextStart = cityRadars
-                    .mapNotNull { parseStartTime(it.time) }
+                    .mapNotNull { parseTimeRange(it.time)?.first }
                     .filter { it.isAfter(now) }
                     .minOrNull()
 
@@ -210,7 +199,7 @@ class RadarNotificationService : Service() {
                     "Danas više nema radara"
                 }
             } else {
-                val activeUntil = activeRadars.mapNotNull { parseEndTime(it.time) }.minOrNull()
+                val activeUntil = activeRadars.mapNotNull { parseTimeRange(it.time)?.second }.minOrNull()
                 val prefix = activeRadars.joinToString(", ") { it.location }
                 if (activeUntil != null) {
                     "$prefix (do ${activeUntil.format(DateTimeFormatter.ofPattern("HH:mm"))})"
@@ -240,7 +229,7 @@ class RadarNotificationService : Service() {
         )
 
         val builder = NotificationCompat.Builder(applicationContext, "radar_status_channel")
-            .setContentTitle(favoriteCity)
+            .setContentTitle(if (favoriteCity.isBlank()) "RoadFlow" else favoriteCity)
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
@@ -250,9 +239,21 @@ class RadarNotificationService : Service() {
             .setDeleteIntent(deleteIntent)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
 
-        val hasExpandableContent = !isNoInternetNoCache && currentRadars.any { it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO" }
-        if (hasExpandableContent) {
+        if (isNoInternetNoCache) {
+            val refreshIntent = Intent(applicationContext, RadarNotificationService::class.java).apply {
+                action = "ACTION_REFRESH"
+            }
+            val refreshPendingIntent = PendingIntent.getService(
+                applicationContext, 1, refreshIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(R.drawable.refresh, "Osvježi", refreshPendingIntent)
             builder.setStyle(inboxStyle)
+        } else {
+            val hasExpandableContent = currentRadars.any { it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO" }
+            if (hasExpandableContent) {
+                builder.setStyle(inboxStyle)
+            }
         }
 
         val notification = builder.build()
@@ -277,7 +278,7 @@ class RadarNotificationService : Service() {
         )
 
         val builder = NotificationCompat.Builder(applicationContext, "radar_status_channel")
-            .setContentTitle(city)
+            .setContentTitle(if (city.isBlank()) "RoadFlow" else city)
             .setContentText("Učitavanje...")
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
@@ -301,49 +302,48 @@ class RadarNotificationService : Service() {
         return builder.build()
     }
 
+    private fun parseTimeRange(timeStr: String): Pair<LocalTime, LocalTime>? {
+        if (timeStr.isBlank() || timeStr.equals("INFO", ignoreCase = true)) return null
+        val normalized = timeStr.replace("–", "-").replace("—", "-").trim()
+        val delimiter = when {
+            normalized.contains(" do ") -> " do "
+            normalized.contains(" DO ") -> " DO "
+            normalized.contains("-") -> "-"
+            else -> return null
+        }
+        val parts = normalized.split(delimiter)
+        if (parts.size != 2) return null
+        val start = parseSingleTime(parts[0]) ?: return null
+        val end = parseSingleTime(parts[1]) ?: return null
+        return Pair(start, end)
+    }
+
+    private fun parseSingleTime(str: String): LocalTime? {
+        val cleanStr = str.trim()
+        val formatters = arrayOf(
+            DateTimeFormatter.ofPattern("H:mm"),
+            DateTimeFormatter.ofPattern("HH:mm"),
+            DateTimeFormatter.ofPattern("H:mm:ss"),
+            DateTimeFormatter.ofPattern("HH:mm:ss")
+        )
+        for (formatter in formatters) {
+            try {
+                return LocalTime.parse(cleanStr, formatter)
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
     private fun isRadarActiveNow(timeStr: String): Boolean {
-        return try {
-            val parts = timeStr.split(" do ")
-            if (parts.size == 2) {
-                val now = LocalTime.now()
-                val start = LocalTime.parse(parts[0].trim())
-                val end = LocalTime.parse(parts[1].trim())
-                if (end.isBefore(start)) {
-                    !now.isBefore(start) || !now.isAfter(end)
-                } else {
-                    !now.isBefore(start) && !now.isAfter(end)
-                }
-            } else {
-                false
-            }
-        } catch (e: Exception) {
-            false
-        }
-    }
+        val range = parseTimeRange(timeStr) ?: return false
+        val now = LocalTime.now().withNano(0)
+        val start = range.first
+        val end = range.second
 
-    private fun parseStartTime(timeStr: String): LocalTime? {
-        return try {
-            val parts = timeStr.split(" do ")
-            if (parts.size == 2) {
-                LocalTime.parse(parts[0].trim())
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun parseEndTime(timeStr: String): LocalTime? {
-        return try {
-            val parts = timeStr.split(" do ")
-            if (parts.size == 2) {
-                LocalTime.parse(parts[1].trim())
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
+        return if (end.isBefore(start)) {
+            !now.isBefore(start) || !now.isAfter(end)
+        } else {
+            !now.isBefore(start) && !now.isAfter(end)
         }
     }
 

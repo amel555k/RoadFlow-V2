@@ -232,10 +232,24 @@ class LocationTrackingService(private val context: Context) {
         sensorListener = null
     }
 
+    private val maxCachedLocationAgeMillis = 45_000L
+
     @SuppressLint("MissingPermission")
     suspend fun getLastKnownLocation(): Location? = suspendCancellableCoroutine { cont ->
         fusedClient.lastLocation
-            .addOnSuccessListener { loc -> cont.resume(loc) }
+            .addOnSuccessListener { loc ->
+                if (loc == null) {
+                    cont.resume(null)
+                    return@addOnSuccessListener
+                }
+                val ageMillis = android.os.SystemClock.elapsedRealtime() - (loc.elapsedRealtimeNanos / 1_000_000L)
+                if (ageMillis > maxCachedLocationAgeMillis) {
+                    android.util.Log.d("LocationService", "Odbacena keširana lokacija, starost: ${ageMillis}ms")
+                    cont.resume(null)
+                } else {
+                    cont.resume(loc)
+                }
+            }
             .addOnFailureListener { cont.resume(null) }
     }
 
