@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 class RadarTrackingService : Service() {
 
@@ -49,6 +51,13 @@ class RadarTrackingService : Service() {
 
         private var sharedAppContext: Context? = null
 
+        private val _allRadars = MutableStateFlow<List<RadarData>>(emptyList())
+        val allRadars: StateFlow<List<RadarData>> = _allRadars.asStateFlow()
+
+        private var backgroundScope: CoroutineScope? = null
+        private var backgroundTickersStarted = false
+        private var lastMorningFetchSlot = -1
+
         fun init(context: Context) {
             if (sharedAppContext == null) {
                 sharedAppContext = context.applicationContext
@@ -59,6 +68,7 @@ class RadarTrackingService : Service() {
             if (alertService == null) {
                 alertService = RadarAlertService(sharedAppContext!!)
             }
+            startBackgroundTickersIfNeeded()
         }
 
         fun start(context: Context) {
@@ -77,6 +87,86 @@ class RadarTrackingService : Service() {
 
         fun setActiveRadars(radars: List<RadarData>) {
             alertService?.setActiveRadars(radars)
+        }
+
+        private fun startBackgroundTickersIfNeeded() {
+            if (backgroundTickersStarted) return
+            backgroundTickersStarted = true
+
+            val scope = CoroutineScope(Dispatchers.Default + Job())
+            backgroundScope = scope
+
+            scope.launch {
+                loadRadarsFromNetwork(forceRefresh = false)
+                while (isActive) {
+                    delay(60_000L)
+                    refreshActiveFilterLocally()
+                }
+            }
+
+            scope.launch {
+                while (isActive) {
+                    val now = TimeProvider.now()
+                    val hour = now.hour
+                    if (hour in 6..7 || (hour == 8 && now.minute == 0)) {
+                        val halfHourSlot = hour * 2 + (now.minute / 30)
+                        if (halfHourSlot != lastMorningFetchSlot) {
+                            lastMorningFetchSlot = halfHourSlot
+                            android.util.Log.d("RadarTrackingService", "Morning network refresh triggered, slot=$halfHourSlot")
+                            loadRadarsFromNetwork(forceRefresh = true)
+                        }
+                    }
+                    delay(60_000L)
+                }
+            }
+        }
+
+        private suspend fun loadRadarsFromNetwork(forceRefresh: Boolean) {
+            val ctx = sharedAppContext ?: return
+            try {
+                val firebaseService = FirebaseService()
+                val parser = RadarParser(ctx as android.app.Application, firebaseService)
+                parser.parseAllLocationsAsFlow(forceRefresh = forceRefresh).collect { }
+                val all = parser.getExpandedRadarsForMapAsync()
+                _allRadars.value = all
+                refreshActiveFilterLocally()
+            } catch (e: Exception) {
+                android.util.Log.e("RadarTrackingService", "loadRadarsFromNetwork failed: ${e.message}")
+            }
+        }
+
+        private fun refreshActiveFilterLocally() {
+            val now = TimeProvider.nowTime()
+            val active = _allRadars.value.filter { radar ->
+                radar.time != "INFO" && isActiveAtTime(radar.time, now)
+            }
+            val stacionarni = RadarConfig.coordinates
+                .filter { it.stacionaran }
+                .map { coord ->
+                    RadarData(
+                        city = coord.mainName,
+                        time = "00:00 do 24:00",
+                        location = coord.mainName,
+                        latitude = coord.latitude,
+                        longitude = coord.longitude,
+                        speedLimit = coord.speedLimit,
+                        coordinate = coord
+                    )
+                }
+            setActiveRadars(active + stacionarni)
+        }
+
+        private fun isActiveAtTime(timeRange: String, now: java.time.LocalTime): Boolean {
+            return try {
+                val parts = timeRange.split(" do ")
+                if (parts.size != 2) return false
+                val fmt = java.time.format.DateTimeFormatter.ofPattern("H:mm")
+                val start = java.time.LocalTime.parse(parts[0].trim(), fmt)
+                val end = java.time.LocalTime.parse(parts[1].trim(), fmt)
+                !now.isBefore(start) && !now.isAfter(end)
+            } catch (e: Exception) {
+                false
+            }
         }
     }
 

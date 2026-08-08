@@ -145,7 +145,7 @@ class RadarNotificationService : Service() {
 
         try {
             withTimeout(30_000L) {
-                currentRadars = parser.parseAllLocationsAsFlow(null).first()
+                currentRadars = parser.parseAllLocationsAsFlow(null).first().radars
                 isNoInternetNoCache = false
             }
         } catch (e: NoInternetWithCacheException) {

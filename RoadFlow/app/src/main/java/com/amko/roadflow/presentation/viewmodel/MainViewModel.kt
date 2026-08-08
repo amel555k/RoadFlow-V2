@@ -35,6 +35,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isLoading = MutableStateFlow(true)
     val showNoInternet = MutableStateFlow(false)
     val isRefreshing = MutableStateFlow(false)
+    val refreshSuccessEvent = MutableStateFlow(0L)
     val hasError = MutableStateFlow(false)
 
     private val savedCantonName = prefs.getString("favorite_canton", null)
@@ -42,7 +43,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Canton.entries.firstOrNull { it.name == name }
     }
     val selectedCanton = MutableStateFlow(initialCanton)
-    val currentDate = MutableStateFlow(java.time.LocalDate.now())
+    val currentDate = MutableStateFlow(com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate())
 
     val canPullToRefresh = MutableStateFlow(true)
 
@@ -108,7 +109,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isLoading.collect { android.util.Log.d("ROADFLOW1", "isLoading=$it uiList.size=${_uiList.value.size}") }
         }
         viewModelScope.launch {
-            currentDate.value = java.time.LocalDate.now()
+            currentDate.value = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate()
             loadData()
         }
     }
@@ -141,13 +142,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             isRefreshing.value = true
-            canPullToRefresh.value = false
 
-            loadDataInternal()
-
-            val cachedToday = withContext(Dispatchers.IO) { parser.isCachedForToday() }
-            canPullToRefresh.value = !cachedToday
-            isRefreshing.value = false
+            loadDataInternal(forceRefresh = true)
         }
     }
 
@@ -160,13 +156,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             canPullToRefresh.value = !cachedToday
         }
     }
-
-    private suspend fun loadDataInternal() {
+    private suspend fun loadDataInternal(forceRefresh: Boolean = false) {
         try {
             hasError.value = false
             var firstEmit = true
-            parser.parseAllLocationsAsFlow(favoriteCanton = selectedCanton.value).collect { partialRadars ->
-                android.util.Log.d("ROADFLOW1", "loadData emit: size=${partialRadars.size} firstEmit=$firstEmit selectedCanton=${selectedCanton.value}")
+            var priorityHandled = false
+            parser.parseAllLocationsAsFlow(favoriteCanton = selectedCanton.value, forceRefresh = forceRefresh).collect { progress ->
+                val partialRadars = progress.radars
+                android.util.Log.d("ROADFLOW1", "loadData emit: size=${partialRadars.size} firstEmit=$firstEmit priorityComplete=${progress.priorityCantonComplete} selectedCanton=${selectedCanton.value}")
 
                 _allRadars.value = partialRadars
                 parser.updateCache(partialRadars)
@@ -178,7 +175,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     android.util.Log.d("ROADFLOW1", "loadData firstEmit filtered.size=${filtered.size}")
                     _displayedRadars.value = filtered
                     _uiList.value = buildUiList(filtered)
-                    currentDate.value = java.time.LocalDate.now()
+                    currentDate.value = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate()
                     isLoading.value = false
                     firstEmit = false
                 } else {
@@ -196,6 +193,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+
+                if (progress.priorityCantonComplete && !priorityHandled) {
+                    priorityHandled = true
+                    isRefreshing.value = false
+                    refreshSuccessEvent.value = System.currentTimeMillis()
+                }
+            }
+
+            if (!priorityHandled) {
+                isRefreshing.value = false
+                refreshSuccessEvent.value = System.currentTimeMillis()
             }
         } catch (e: NoInternetWithCacheException) {
             _allRadars.value = e.cachedRadars
@@ -209,13 +217,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiList.value = buildUiList(filtered)
                 }
             }
-            currentDate.value = java.time.LocalDate.now()
+            currentDate.value = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate()
             showNoInternet.value = true
             isLoading.value = false
+            isRefreshing.value = false
         } catch (_: Exception) {
             showNoInternet.value = true
             hasError.value = true
             isLoading.value = false
+            isRefreshing.value = false
         }
     }
 }

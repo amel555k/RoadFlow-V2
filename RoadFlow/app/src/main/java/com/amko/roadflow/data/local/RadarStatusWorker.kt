@@ -61,8 +61,8 @@ class RadarStatusWorker(
         var noInternetNoCache = false
 
         try {
-            parser.parseAllLocationsAsFlow(null).collect { list ->
-                radars = list
+            parser.parseAllLocationsAsFlow(null).collect { progress ->
+                radars = progress.radars
             }
         } catch (e: com.amko.roadflow.data.local.NoInternetWithCacheException) {
             radars = e.cachedRadars

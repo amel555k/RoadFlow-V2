@@ -22,8 +22,13 @@ import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.flowOn
 import com.amko.roadflow.domain.model.Canton
+
 class NoInternetWithCacheException(val cachedRadars: List<RadarData>) : Exception("Nema internet konekcije")
 
+data class RadarFetchProgress(
+    val radars: List<RadarData>,
+    val priorityCantonComplete: Boolean = false
+)
 class RadarParser(
     private val context: Context,
     private val firebaseService: FirebaseService
@@ -45,21 +50,25 @@ class RadarParser(
         private val SATI_REPLACE_REGEX = Regex("\\s*sati", RegexOption.IGNORE_CASE)
         private val SATI_REGEX = Regex("\\s*sati\\s*", RegexOption.IGNORE_CASE)
         private val DATE_PATTERN = Regex("""([0-9]{1,2})[.\s]+([0-9]{1,2})[.\s]+([0-9]{4})""")
+        var DAY_START_HOUR = 6
     }
 
+    private fun effectiveRadarDate(): LocalDate {
+        return TimeProvider.effectiveRadarDate()
+    }
     fun isCachedForToday(): Boolean {
         if (!filePath.exists()) return false
         val lastModified = LocalDate.ofEpochDay(filePath.lastModified() / 86400000L)
-        return lastModified == LocalDate.now()
+        return lastModified == effectiveRadarDate()
     }
-    suspend fun parseAllLocationsAsFlow(favoriteCanton: Canton? = null): kotlinx.coroutines.flow.Flow<List<RadarData>> =
+    suspend fun parseAllLocationsAsFlow(favoriteCanton: Canton? = null, forceRefresh: Boolean = false): kotlinx.coroutines.flow.Flow<RadarFetchProgress> =
         kotlinx.coroutines.flow.flow {
-            val todayDate = LocalDate.now()
+            val todayDate = effectiveRadarDate()
 
-            if (filePath.exists()) {
+            if (!forceRefresh && filePath.exists()) {
                 val lastModified = LocalDate.ofEpochDay(filePath.lastModified() / 86400000L)
                 if (lastModified == todayDate) {
-                    emit(parseFileContent(readFromFileAsync()))
+                    emit(RadarFetchProgress(parseFileContent(readFromFileAsync()), priorityCantonComplete = true))
                     return@flow
                 }
             }
@@ -79,11 +88,22 @@ class RadarParser(
             coroutineScope {
                 val firebaseData = firebaseService.getFirebaseRadarsAsync(todayDate)
                 accumulated.addAll(firebaseData)
-                emit(accumulated.sortedWith(compareByDescending<RadarData> { it.city }
-                    .thenByDescending { it.pageDate ?: LocalDateTime.MIN }))
+                emit(RadarFetchProgress(accumulated.sortedWith(compareByDescending<RadarData> { it.city }
+                    .thenByDescending { it.pageDate ?: LocalDateTime.MIN })))
                 val locationGroups = RadarConfig.locations
                     .filter { !it.fromFirebase && it.parsingEnabled}
                     .sortedBy { if (favoriteCanton != null && it.canton == favoriteCanton) 0 else 1 }
+
+                val priorityLocationNames = if (favoriteCanton != null) {
+                    RadarConfig.locations
+                        .filter { it.canton == favoriteCanton && !it.fromFirebase && it.parsingEnabled }
+                        .map { it.name }
+                        .toHashSet()
+                } else {
+                    emptySet()
+                }
+                val remainingPriorityLocations = priorityLocationNames.toMutableSet()
+                var priorityAlreadySignaled = favoriteCanton == null
 
                 for (location in locationGroups) {
                     val deferredList = location.possibleIds.map { id ->
@@ -98,15 +118,21 @@ class RadarParser(
                         }
                     }
 
-                    emit(accumulated
-                        .filter { it.time != "INFO" }
-                        .groupBy { Triple(it.city, it.time, it.location) }
-                        .map { it.value.first() }
-                        .sortedWith(compareByDescending<RadarData> { it.city }
-                            .thenByDescending { it.pageDate ?: LocalDateTime.MIN }))
+                    remainingPriorityLocations.remove(location.name)
+                    val priorityJustCompleted = !priorityAlreadySignaled && remainingPriorityLocations.isEmpty()
+                    if (priorityJustCompleted) priorityAlreadySignaled = true
+
+                    emit(RadarFetchProgress(
+                        accumulated
+                            .filter { it.time != "INFO" }
+                            .groupBy { Triple(it.city, it.time, it.location) }
+                            .map { it.value.first() }
+                            .sortedWith(compareByDescending<RadarData> { it.city }
+                                .thenByDescending { it.pageDate ?: LocalDateTime.MIN }),
+                        priorityCantonComplete = priorityJustCompleted
+                    ))
                 }
             }
-
             val deduped = accumulated
                 .filter { it.time != "INFO" }
                 .groupBy { Triple(it.city, it.time, it.location) }
@@ -156,7 +182,7 @@ class RadarParser(
                 ))
             } else combined
 
-            emit(uniqueRadars)
+            emit(RadarFetchProgress(uniqueRadars, priorityCantonComplete = false))
 
             val hasActualData = uniqueRadars.any { it.time != "INFO" }
 

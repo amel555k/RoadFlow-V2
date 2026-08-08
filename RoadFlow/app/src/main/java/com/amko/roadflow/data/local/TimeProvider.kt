@@ -96,6 +96,10 @@ object TimeProvider {
 
     fun nowTime(): LocalTime = now().toLocalTime()
 
+    fun effectiveRadarDate(): LocalDate {
+        val current = now()
+        return if (current.hour < RadarParser.DAY_START_HOUR) current.toLocalDate().minusDays(1) else current.toLocalDate()
+    }
     private fun fetchServerEpochMillis(url: String): Long {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {

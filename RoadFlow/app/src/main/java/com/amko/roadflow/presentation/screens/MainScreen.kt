@@ -44,6 +44,8 @@ import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.presentation.viewmodel.RadarListItem
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import java.time.format.DateTimeFormatter
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -273,18 +275,34 @@ fun MainScreen(
                         }
                     }
 
-                    if (canPullToRefresh) {
-                        PullToRefreshBox(
-                            isRefreshing = isRefreshing,
-                            onRefresh = { viewModel.refreshData() },
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            listContent()
+                    val refreshSuccessEvent by viewModel.refreshSuccessEvent.collectAsState()
+                    var showSuccessCapsule by remember { mutableStateOf(false) }
+
+                    LaunchedEffect(refreshSuccessEvent) {
+                        if (refreshSuccessEvent != 0L) {
+                            showSuccessCapsule = true
+                            delay(1800L)
+                            showSuccessCapsule = false
                         }
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            listContent()
+                    }
+
+                    val pullToRefreshState = rememberPullToRefreshState()
+
+                    PullToRefreshBox(
+                        isRefreshing = isRefreshing,
+                        onRefresh = { viewModel.refreshData() },
+                        state = pullToRefreshState,
+                        modifier = Modifier.fillMaxSize(),
+                        indicator = {
+                            RefreshIndicatorWithSuccess(
+                                state = pullToRefreshState,
+                                isRefreshing = isRefreshing,
+                                showSuccess = showSuccessCapsule,
+                                modifier = Modifier.align(Alignment.TopCenter)
+                            )
                         }
+                    ) {
+                        listContent()
                     }
                 }
             }
@@ -412,6 +430,65 @@ fun ThemeSwitch(
                     }
                 }
             }
+        }
+    }
+}
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun RefreshIndicatorWithSuccess(
+    state: androidx.compose.material3.pulltorefresh.PullToRefreshState,
+    isRefreshing: Boolean,
+    showSuccess: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val capsuleWidth by animateDpAsState(
+        targetValue = if (showSuccess) 220.dp else 40.dp,
+        animationSpec = tween(durationMillis = 350),
+        label = "capsuleWidth"
+    )
+    val capsuleHeight by animateDpAsState(
+        targetValue = if (showSuccess) 40.dp else 40.dp,
+        animationSpec = tween(durationMillis = 350),
+        label = "capsuleHeight"
+    )
+    val cornerRadius by animateDpAsState(
+        targetValue = if (showSuccess) 20.dp else 20.dp,
+        animationSpec = tween(durationMillis = 350),
+        label = "capsuleCorner"
+    )
+    val textAlpha by animateColorAsState(
+        targetValue = if (showSuccess) MaterialTheme.colorScheme.onPrimary else Color.Transparent,
+        animationSpec = tween(durationMillis = 200, delayMillis = if (showSuccess) 200 else 0),
+        label = "capsuleTextAlpha"
+    )
+
+    Box(
+        modifier = modifier.padding(top = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (showSuccess) {
+            Box(
+                modifier = Modifier
+                    .width(capsuleWidth)
+                    .height(capsuleHeight)
+                    .clip(RoundedCornerShape(cornerRadius))
+                    .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Podaci uspješno ažurirani",
+                    color = textAlpha,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        } else {
+            PullToRefreshDefaults.Indicator(
+                state = state,
+                isRefreshing = isRefreshing,
+                color = MaterialTheme.colorScheme.primary,
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         }
     }
 }

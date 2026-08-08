@@ -219,8 +219,7 @@ class FirebaseService {
             if (radars.isEmpty()) return@withContext
 
             TimeProvider.sync()
-            if (TimeProvider.isTimeSynced() && TimeProvider.nowDate() != date) return@withContext
-
+            if (TimeProvider.isTimeSynced() && TimeProvider.effectiveRadarDate() != date) return@withContext
             val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
             val url = getAuthenticatedUrl("${Secrets.FIREBASE_BASE_URL}history/$dateStr.json")
             val existing = getHistoryRadarsAsync(date)
