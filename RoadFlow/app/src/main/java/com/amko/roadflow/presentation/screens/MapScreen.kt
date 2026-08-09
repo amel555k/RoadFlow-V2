@@ -72,7 +72,9 @@ private const val DESTINATION_SOURCE_ID = "destination-marker-source"
 private const val DESTINATION_LAYER_ID = "destination-marker-layer"
 
 private const val MIN_GEOJSON_UPDATE_INTERVAL_NANOS = 16_000_000L
-private const val TRACKING_ANIM_DURATION_MS = 300L
+private const val TRACKING_ANIM_MIN_DURATION_MS = 400L
+private const val TRACKING_ANIM_MAX_DURATION_MS = 1500L
+private const val TRACKING_ANIM_FALLBACK_DURATION_MS = 800L
 
 private fun createDestinationBitmap(context: android.content.Context): android.graphics.Bitmap {
     val density = context.resources.displayMetrics.density
@@ -177,6 +179,7 @@ fun MapScreen(
     var lastAnimatedLocation by remember { mutableStateOf<android.location.Location?>(null) }
     var lastAnimatedBearing by remember { mutableStateOf(0f) }
     var lastUserGeoJsonUpdateNanos by remember { mutableStateOf(0L) }
+    var lastFixElapsedRealtime by remember { mutableStateOf(0L) }
     val hadSavedCameraOnEnter = remember { viewModel.savedCameraLat != null }
     var didInitialZoom by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var isTransitioningToTracking by remember { mutableStateOf(false) }
@@ -477,6 +480,7 @@ fun MapScreen(
             trackingAnimator?.cancel()
 
             if (previousLoc == null || jumpDistanceMeters > 300.0 || !isTransitioningToTracking.not()) {
+                lastFixElapsedRealtime = android.os.SystemClock.elapsedRealtime()
                 pushUserGeoJson(loc.latitude, loc.longitude, targetRotation, force = true)
                 if (!isTransitioningToTracking) {
                     map.moveCamera(
@@ -491,9 +495,14 @@ fun MapScreen(
                     )
                 }
             } else {
+                val now = android.os.SystemClock.elapsedRealtime()
+                val measuredElapsed = if (lastFixElapsedRealtime == 0L) TRACKING_ANIM_FALLBACK_DURATION_MS else (now - lastFixElapsedRealtime)
+                lastFixElapsedRealtime = now
+                val animDuration = measuredElapsed.coerceIn(TRACKING_ANIM_MIN_DURATION_MS, TRACKING_ANIM_MAX_DURATION_MS)
+
                 val startZoom = 17.0
                 trackingAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-                    duration = TRACKING_ANIM_DURATION_MS
+                    duration = animDuration
                     interpolator = android.view.animation.DecelerateInterpolator()
                     addUpdateListener { animator ->
                         val fraction = animator.animatedValue as Float
