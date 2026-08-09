@@ -1,5 +1,6 @@
 package com.amko.roadflow.presentation.viewmodel
 
+import android.R.attr.delay
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,16 +14,14 @@ import com.amko.roadflow.domain.model.RadarData
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
 
 class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val firebaseService = FirebaseService()
     private val parser = RadarParser(application, firebaseService)
-
-    val symbolMutex = Mutex()
 
     init {
         RadarTrackingService.init(application)
@@ -81,6 +80,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         loadRadars()
+        startLocalFilterTicker()
     }
 
     fun loadRadars() {
@@ -131,17 +131,29 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun setFilter(filter: RadarFilter) {
         _selectedFilter.value = filter
         viewModelScope.launch {
-            val now = java.time.LocalTime.now()
-            _activeRadars.value = when (filter) {
-                RadarFilter.ACTIVE -> _allRadars.value.filter {
-                    it.time != "INFO" && isActiveNow(it.time, now)
-                } + getStacionarni()
-                RadarFilter.TODAY -> _allRadars.value.filter {
-                    it.time != "INFO"
-                } + getStacionarni()
+            applyCurrentFilter()
+        }
+    }
 
+    private fun applyCurrentFilter() {
+        val now = java.time.LocalTime.now()
+        _activeRadars.value = when (_selectedFilter.value) {
+            RadarFilter.ACTIVE -> _allRadars.value.filter {
+                it.time != "INFO" && isActiveNow(it.time, now)
+            } + getStacionarni()
+            RadarFilter.TODAY -> _allRadars.value.filter {
+                it.time != "INFO"
+            } + getStacionarni()
+        }
+        RadarTrackingService.setActiveRadars(_activeRadars.value)
+    }
+
+    private fun startLocalFilterTicker() {
+        viewModelScope.launch {
+            while (true) {
+                delay(60_000L)
+                applyCurrentFilter()
             }
-            RadarTrackingService.setActiveRadars(_activeRadars.value)
         }
     }
 

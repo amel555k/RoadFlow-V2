@@ -281,8 +281,12 @@ fun MainScreen(
                     LaunchedEffect(refreshSuccessEvent) {
                         if (refreshSuccessEvent != 0L) {
                             showSuccessCapsule = true
-                            delay(1800L)
-                            showSuccessCapsule = false
+                            try {
+                                delay(1800L)
+                            } finally {
+                                showSuccessCapsule = false
+                                viewModel.refreshSuccessEvent.value = 0L
+                            }
                         }
                     }
 

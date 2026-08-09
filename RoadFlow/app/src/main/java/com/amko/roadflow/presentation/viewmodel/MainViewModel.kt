@@ -142,7 +142,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             isRefreshing.value = true
-
             loadDataInternal(forceRefresh = true)
         }
     }
@@ -156,6 +155,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             canPullToRefresh.value = !cachedToday
         }
     }
+
     private suspend fun loadDataInternal(forceRefresh: Boolean = false) {
         try {
             hasError.value = false
@@ -197,13 +197,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (progress.priorityCantonComplete && !priorityHandled) {
                     priorityHandled = true
                     isRefreshing.value = false
-                    refreshSuccessEvent.value = System.currentTimeMillis()
+                    if (forceRefresh) {
+                        refreshSuccessEvent.value = System.currentTimeMillis()
+                    }
                 }
             }
 
             if (!priorityHandled) {
                 isRefreshing.value = false
-                refreshSuccessEvent.value = System.currentTimeMillis()
+                if (forceRefresh) {
+                    refreshSuccessEvent.value = System.currentTimeMillis()
+                }
             }
         } catch (e: NoInternetWithCacheException) {
             _allRadars.value = e.cachedRadars

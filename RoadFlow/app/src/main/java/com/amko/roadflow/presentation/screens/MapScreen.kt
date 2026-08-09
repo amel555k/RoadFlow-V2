@@ -40,13 +40,12 @@ import com.amko.roadflow.presentation.viewmodel.MapViewModel
 import com.amko.roadflow.utils.createCircleFeature
 import com.amko.roadflow.utils.createRadarBitmap
 import com.amko.roadflow.utils.createUserBitmap
-import com.amko.roadflow.utils.MapDebugLogger
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.isActive
 
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -55,22 +54,25 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-import org.maplibre.android.plugins.annotation.Symbol
-import org.maplibre.android.plugins.annotation.SymbolManager
-import org.maplibre.android.plugins.annotation.SymbolOptions
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
-import kotlinx.coroutines.isActive
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
 private const val USER_ICON_ID = "user-icon"
 private const val DESTINATION_ICON_ID = "destination-icon"
-private const val USER_SORT_KEY = 1000f
-private const val RADAR_SORT_KEY = 0f
-private const val DESTINATION_SORT_KEY = 2000f
+
+private const val RADAR_SOURCE_ID = "radar-markers-source"
+private const val RADAR_LAYER_ID = "radar-markers-layer"
+private const val USER_SOURCE_ID = "user-marker-source"
+private const val USER_LAYER_ID = "user-marker-layer"
+private const val DESTINATION_SOURCE_ID = "destination-marker-source"
+private const val DESTINATION_LAYER_ID = "destination-marker-layer"
+
+private const val MIN_GEOJSON_UPDATE_INTERVAL_NANOS = 16_000_000L
+private const val TRACKING_ANIM_DURATION_MS = 300L
 
 private fun createDestinationBitmap(context: android.content.Context): android.graphics.Bitmap {
     val density = context.resources.displayMetrics.density
@@ -91,13 +93,22 @@ private fun createDestinationBitmap(context: android.content.Context): android.g
     return bitmap
 }
 
-private fun isSymbolValid(sm: SymbolManager, symbol: Symbol?): Boolean {
-    if (symbol == null) return false
-    return try {
-        sm.annotations.get(symbol.id) != null
-    } catch (e: Exception) {
-        false
-    }
+private fun userFeature(lat: Double, lng: Double, rotation: Float): FeatureCollection {
+    val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat))
+    feature.addNumberProperty("rotation", rotation)
+    return FeatureCollection.fromFeature(feature)
+}
+
+private fun destinationFeature(latLng: LatLng?): FeatureCollection {
+    if (latLng == null) return FeatureCollection.fromFeatures(emptyList())
+    return FeatureCollection.fromFeature(Feature.fromGeometry(Point.fromLngLat(latLng.longitude, latLng.latitude)))
+}
+
+private fun shortestAngleLerp(start: Float, end: Float, fraction: Float): Float {
+    var diff = (end - start) % 360f
+    if (diff > 180f) diff -= 360f
+    if (diff < -180f) diff += 360f
+    return (start + diff * fraction + 360f) % 360f
 }
 
 @Composable
@@ -158,20 +169,18 @@ fun MapScreen(
     val isInRadarZone by alertService.isInZone.collectAsState()
     var mapRef by remember { mutableStateOf<MapLibreMap?>(null) }
     var styleRef by remember { mutableStateOf<Style?>(null) }
-    var symbolManager by remember { mutableStateOf<SymbolManager?>(null) }
-    var symbolManagerGeneration by remember { mutableStateOf(0) }
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val selectedRadar by viewModel.selectedRadar.collectAsState()
     var isMapReady by remember { mutableStateOf(false) }
     var mapInitialized by remember { mutableStateOf(false) }
-    var userSymbol by remember { mutableStateOf<Symbol?>(null) }
-    var destinationSymbol by remember { mutableStateOf<Symbol?>(null) }
-    var markerAnimator by remember { mutableStateOf<android.animation.ValueAnimator?>(null) }
+    var trackingAnimator by remember { mutableStateOf<android.animation.ValueAnimator?>(null) }
     var lastAnimatedLocation by remember { mutableStateOf<android.location.Location?>(null) }
-    var lastFixTimestamp by remember { mutableStateOf(0L) }
+    var lastAnimatedBearing by remember { mutableStateOf(0f) }
+    var lastUserGeoJsonUpdateNanos by remember { mutableStateOf(0L) }
     val hadSavedCameraOnEnter = remember { viewModel.savedCameraLat != null }
     var didInitialZoom by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var isTransitioningToTracking by remember { mutableStateOf(false) }
+    var isCameraLocked by remember { mutableStateOf(false) }
     var showNoGps by remember { mutableStateOf(false) }
     var locationFound by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var gpsWasDisabled by remember { mutableStateOf(false) }
@@ -194,45 +203,17 @@ fun MapScreen(
         }
     }
 
-    suspend fun createUserSymbolSafely(sm: SymbolManager, latLng: LatLng, rotate: Float): Symbol? {
-        return try {
-            val created = sm.create(
-                SymbolOptions()
-                    .withLatLng(latLng)
-                    .withIconImage(USER_ICON_ID)
-                    .withIconSize(1.2f)
-                    .withIconRotate(rotate)
-                    .withSymbolSortKey(USER_SORT_KEY)
-            )
-            MapDebugLogger.logMarkerAdded("UserMarker", created.id.toString(), latLng.latitude, latLng.longitude)
-            created
-        } catch (e: Exception) {
-            MapDebugLogger.logMarkerError("UserMarker", "CreateFailed", e.message ?: "Unknown error")
-            null
-        }
-    }
-
-    suspend fun ensureUserSymbol(sm: SymbolManager, latLng: LatLng, rotate: Float): Symbol? {
-        return viewModel.symbolMutex.withLock {
-            val existing = userSymbol
-            if (existing == null || !isSymbolValid(sm, existing)) {
-                val created = createUserSymbolSafely(sm, latLng, rotate)
-                userSymbol = created
-                lastAnimatedLocation = null
-                created
-            } else {
-                existing
-            }
-        }
+    fun pushUserGeoJson(lat: Double, lng: Double, rotation: Float, force: Boolean = false) {
+        val style = styleRef ?: return
+        val now = System.nanoTime()
+        if (!force && now - lastUserGeoJsonUpdateNanos < MIN_GEOJSON_UPDATE_INTERVAL_NANOS) return
+        lastUserGeoJsonUpdateNanos = now
+        style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(USER_SOURCE_ID)
+            ?.setGeoJson(userFeature(lat, lng, rotation))
     }
 
     LaunchedEffect(Unit) {
-        MapDebugLogger.init(context)
-        MapDebugLogger.log("MapScreen", "MapScreen initialized, tracking logs started")
-        launch {
-            delay(2 * 60 * 1000)
-            MapDebugLogger.log("MapScreen", "2 minutes of map usage completed")
-        }
+
 
         while (true) {
             val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
@@ -240,13 +221,11 @@ fun MapScreen(
             val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
 
             if (!gpsEnabled && isGpsEnabled) {
-                MapDebugLogger.log("MapScreen", "GPS disabled detected")
                 showNoGps = true
                 gpsWasDisabled = true
                 showGpsLoading = false
 
                 if (isActiveTracking) {
-                    MapDebugLogger.log("MapScreen", "Stopping active tracking due to no GPS")
                     viewModel.locationService.stopActiveTracking()
                     viewModel.stopBackgroundTracking()
                     alertService.stopAlerts()
@@ -254,25 +233,14 @@ fun MapScreen(
 
                 viewModel.locationService.stopPassiveTracking()
 
-                val sm = symbolManager
-                viewModel.symbolMutex.withLock {
-                    val existing = userSymbol
-                    if (sm != null && existing != null) {
-                        MapDebugLogger.logMarkerRemoved("UserMarker", existing.id.toString(), "No GPS signal")
-                        try {
-                            sm.delete(existing)
-                        } catch (e: Exception) {
-                            MapDebugLogger.logMarkerError("UserMarker", "DeleteOnGpsLost", e.message ?: "Unknown error")
-                        }
-                        userSymbol = null
-                        lastAnimatedLocation = null
-                    }
-                }
+                trackingAnimator?.cancel()
+                lastAnimatedLocation = null
+                styleRef?.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(USER_SOURCE_ID)
+                    ?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
 
                 locationFound = false
                 didInitialZoom = false
             } else if (gpsEnabled && !isGpsEnabled && gpsWasDisabled && !locationFound) {
-                MapDebugLogger.log("MapScreen", "GPS re-enabled detected")
                 showNoGps = false
                 showGpsLoading = true
 
@@ -371,67 +339,29 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(symbolManagerGeneration) {
-        if (symbolManagerGeneration == 0) return@LaunchedEffect
-        val sm = symbolManager ?: return@LaunchedEffect
-        MapDebugLogger.log("MapMarkers", "SymbolManager regenerated (gen=$symbolManagerGeneration), rebuilding all markers")
-
-        viewModel.symbolMutex.withLock {
-            markerAnimator?.cancel()
-            userSymbol = null
-            destinationSymbol = null
-            lastAnimatedLocation = null
-
-            val loc = userLocation
-            if (loc != null) {
-                userSymbol = createUserSymbolSafely(sm, LatLng(loc.latitude, loc.longitude), 0f)
-            }
-
-            val dest = selectedDestination
-            if (dest != null) {
-                try {
-                    destinationSymbol = sm.create(
-                        SymbolOptions()
-                            .withLatLng(dest)
-                            .withIconImage(DESTINATION_ICON_ID)
-                            .withIconSize(1.0f)
-                            .withSymbolSortKey(DESTINATION_SORT_KEY)
-                    )
-                } catch (e: Exception) {
-                    MapDebugLogger.logMarkerError("DestinationMarker", "RecreateFailed", e.message ?: "Unknown error")
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(activeRadars, styleRef, symbolManagerGeneration) {
-        val sm = symbolManager ?: return@LaunchedEffect
-        styleRef ?: return@LaunchedEffect
+    LaunchedEffect(activeRadars, styleRef) {
+        val style = styleRef ?: return@LaunchedEffect
         val requestRadars = activeRadars
         val requestId = System.currentTimeMillis()
 
-        MapDebugLogger.log("MapMarkers", "[$requestId] START effect radars=${requestRadars.size}")
 
-        val newSymbolsOptions = withContext(Dispatchers.Default) {
+        val radarFeatures = withContext(Dispatchers.Default) {
             requestRadars.mapIndexedNotNull { index, radar ->
                 val lat = radar.latitude ?: return@mapIndexedNotNull null
                 val lng = radar.longitude ?: return@mapIndexedNotNull null
                 val iconId = if (radar.coordinate?.stacionaran == true)
                     RADAR_ICON_STACIONARNI_ID else RADAR_ICON_ID
-                SymbolOptions()
-                    .withLatLng(LatLng(lat, lng))
-                    .withIconImage(iconId)
-                    .withIconSize(1.0f)
-                    .withSymbolSortKey(RADAR_SORT_KEY)
-                    .withData(com.google.gson.JsonPrimitive(index))
+                val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat))
+                feature.addStringProperty("iconId", iconId)
+                feature.addNumberProperty("index", index)
+                feature
             }
         }
 
-        MapDebugLogger.log("MapMarkers", "[$requestId] built symbolOptions=${newSymbolsOptions.size} (dropped=${requestRadars.size - newSymbolsOptions.size})")
 
         val radius = context.getSharedPreferences("sound_settings", android.content.Context.MODE_PRIVATE)
             .getInt("alert_radius", 200).toDouble()
-        val featureCollection = withContext(Dispatchers.Default) {
+        val zoneFeatureCollection = withContext(Dispatchers.Default) {
             val features = requestRadars.mapNotNull { radar ->
                 val lat = radar.latitude ?: return@mapNotNull null
                 val lng = radar.longitude ?: return@mapNotNull null
@@ -441,86 +371,21 @@ fun MapScreen(
         }
 
         if (!isActive) {
-            MapDebugLogger.logMarkerError("RadarMarker", "CoroutineAborted", "Otkazano iscrtavanje radara prije primjene")
             return@LaunchedEffect
         }
         if (requestRadars !== activeRadars) {
-            MapDebugLogger.logMarkerError("RadarMarker", "StaleData", "Podaci zastarjeli, prekid iscrtavanja (bilo: ${requestRadars.size}, sada: ${activeRadars.size})")
             return@LaunchedEffect
         }
 
-        MapDebugLogger.logMutex("RadarEffect", "[$requestId] waiting for lock")
-        var radarUpdateSucceeded = false
-        var afterCount = -1
-        viewModel.symbolMutex.withLock {
-            MapDebugLogger.logMutex("RadarEffect", "[$requestId] lock acquired")
-            val savedLatLng = userSymbol?.latLng
-            val savedRotate = userSymbol?.iconRotate ?: 0f
-            val savedDestLatLng = destinationSymbol?.latLng
-
-            try {
-                val beforeCount = sm.annotations.size()
-                MapDebugLogger.logMarkerRemoved("RadarMarker", "ALL", "Brisanje svih markera sa mape, obrisano ukupno: $beforeCount")
-                sm.deleteAll()
-                userSymbol = null
-                destinationSymbol = null
-
-                if (newSymbolsOptions.isNotEmpty()) {
-                    val created = sm.create(newSymbolsOptions)
-                    MapDebugLogger.logMarkerUpdated("RadarMarker", "BATCH_CREATE", "Kreiranje", "Uspješno iscrtano ${created.size} radara")
-                } else {
-                    MapDebugLogger.logMarkerRemoved("RadarMarker", "BATCH_EMPTY", "Nijedan radar nije kreiran jer je lista prazna")
-                }
-
-                if (savedLatLng != null) {
-                    userSymbol = createUserSymbolSafely(sm, savedLatLng, savedRotate)
-                    lastAnimatedLocation = null
-                    MapDebugLogger.log("MapMarkers", "[$requestId] restored userSymbol id=${userSymbol?.id}")
-                } else {
-                    MapDebugLogger.log("MapMarkers", "[$requestId] no previous userSymbol to restore")
-                }
-
-                if (savedDestLatLng != null) {
-                    try {
-                        destinationSymbol = sm.create(
-                            SymbolOptions()
-                                .withLatLng(savedDestLatLng)
-                                .withIconImage(DESTINATION_ICON_ID)
-                                .withIconSize(1.0f)
-                                .withSymbolSortKey(DESTINATION_SORT_KEY)
-                        )
-                        MapDebugLogger.log("MapMarkers", "[$requestId] restored destinationSymbol id=${destinationSymbol?.id}")
-                    } catch (e: Exception) {
-                        MapDebugLogger.logMarkerError("DestinationMarker", "RestoreFailed", e.message ?: "Unknown error")
-                    }
-                }
-
-                afterCount = sm.annotations.size()
-                radarUpdateSucceeded = true
-            } catch (e: Exception) {
-                MapDebugLogger.logMarkerError("RadarMarker", "BatchUpdateFailed", e.message ?: "Unknown error")
-                symbolManagerGeneration = symbolManagerGeneration + 1
-            }
-        }
-        MapDebugLogger.logMutex("RadarEffect", "[$requestId] lock released")
-
-        if (radarUpdateSucceeded) {
-            mapRef?.style?.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(
-                "radar-zones-source"
-            )?.setGeoJson(featureCollection)
+        try {
+            style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(RADAR_SOURCE_ID)
+                ?.setGeoJson(FeatureCollection.fromFeatures(radarFeatures))
+            style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>("radar-zones-source")
+                ?.setGeoJson(zoneFeatureCollection)
 
             alertService.setActiveRadars(requestRadars)
 
-            val expectedCount = newSymbolsOptions.size +
-                    (if (userSymbol != null) 1 else 0) +
-                    (if (destinationSymbol != null) 1 else 0)
-            MapDebugLogger.log("MapMarkers", "[$requestId] DONE afterCount=$afterCount expected=$expectedCount")
-
-            if (afterCount != expectedCount) {
-                MapDebugLogger.logMarkerError("RadarMarker", "CountMismatch", "Rendering greška! Očekivano $expectedCount markera, ali izbrojano $afterCount markera.")
-            }
-        } else {
-            MapDebugLogger.log("MapMarkers", "[$requestId] SKIPPED geojson update because batch update failed")
+        } catch (e: Exception) {
         }
     }
 
@@ -551,172 +416,108 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(selectedDestination, symbolManager, isMapReady, symbolManagerGeneration) {
-        val sm = symbolManager ?: return@LaunchedEffect
-        viewModel.symbolMutex.withLock {
-            val existing = destinationSymbol
-            if (existing != null && isSymbolValid(sm, existing)) {
-                try {
-                    sm.delete(existing)
-                } catch (e: Exception) {
-                    MapDebugLogger.logMarkerError("DestinationMarker", "DeleteFailed", e.message ?: "Unknown error")
-                }
-            }
-            destinationSymbol = null
-
-            val dest = selectedDestination
-            if (dest != null) {
-                try {
-                    destinationSymbol = sm.create(
-                        SymbolOptions()
-                            .withLatLng(dest)
-                            .withIconImage(DESTINATION_ICON_ID)
-                            .withIconSize(1.0f)
-                            .withSymbolSortKey(DESTINATION_SORT_KEY)
-                    )
-                } catch (e: Exception) {
-                    MapDebugLogger.logMarkerError("DestinationMarker", "CreateFailed", e.message ?: "Unknown error")
-                }
-            }
-        }
+    LaunchedEffect(selectedDestination, styleRef, isMapReady) {
+        val style = styleRef ?: return@LaunchedEffect
+        style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(DESTINATION_SOURCE_ID)
+            ?.setGeoJson(destinationFeature(selectedDestination))
         updateDestinationScreenPoint()
     }
 
-    LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled, symbolManagerGeneration) {
+    LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled, isCameraLocked) {
         val map = mapRef ?: return@LaunchedEffect
-        val sm = symbolManager ?: return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
         if (!isMapReady) return@LaunchedEffect
         if (!isGpsEnabled) return@LaunchedEffect
 
-        MapDebugLogger.log("UserMarker", "Location update received: lat=${loc.latitude} lng=${loc.longitude} isActiveTracking=$isActiveTracking")
 
-        map.uiSettings.isScrollGesturesEnabled = !isActiveTracking
-        map.uiSettings.isZoomGesturesEnabled = !isActiveTracking
-        map.uiSettings.isRotateGesturesEnabled = !isActiveTracking
-        map.uiSettings.isTiltGesturesEnabled = !isActiveTracking
+        val gesturesAllowed = !isActiveTracking && !isCameraLocked
+        map.uiSettings.isScrollGesturesEnabled = gesturesAllowed
+        map.uiSettings.isZoomGesturesEnabled = gesturesAllowed
+        map.uiSettings.isRotateGesturesEnabled = gesturesAllowed
+        map.uiSettings.isTiltGesturesEnabled = gesturesAllowed
 
-        val rotation = 0f
+        val targetRotation = if (isActiveTracking) userHeading.toFloat() else 0f
 
-        val currentSymbol = viewModel.symbolMutex.withLock { userSymbol }
-        if (currentSymbol == null || !isSymbolValid(sm, currentSymbol)) {
-            MapDebugLogger.log("UserMarker", "Creating initial user symbol")
-            ensureUserSymbol(sm, LatLng(loc.latitude, loc.longitude), rotation)
-        } else {
-            val locChanged = lastAnimatedLocation == null ||
-                    loc.latitude != lastAnimatedLocation?.latitude ||
-                    loc.longitude != lastAnimatedLocation?.longitude
+        val locChanged = lastAnimatedLocation == null ||
+                loc.latitude != lastAnimatedLocation?.latitude ||
+                loc.longitude != lastAnimatedLocation?.longitude
+        val bearingChanged = targetRotation != lastAnimatedBearing
 
-            if (!locChanged) {
-                MapDebugLogger.logMarkerUpdated("UserMarker", currentSymbol.id.toString(), "Rotation", "Lat: ${loc.latitude} Lng: ${loc.longitude}")
-                viewModel.symbolMutex.withLock {
-                    val sym = userSymbol
-                    if (sym != null) {
-                        try {
-                            sym.iconRotate = rotation
-                            sm.update(sym)
-                        } catch (e: Exception) {
-                            MapDebugLogger.logMarkerError("UserMarker", "RotationUpdate", e.message ?: "Unknown error")
-                            userSymbol = null
-                            lastAnimatedLocation = null
-                        }
-                    }
-                }
-            } else {
-                MapDebugLogger.logMarkerUpdated("UserMarker", currentSymbol.id.toString(), "Position", "Lat: ${loc.latitude} Lng: ${loc.longitude}")
-                lastAnimatedLocation = loc
-                val startLatLng = currentSymbol.latLng
-                val targetLatLng = LatLng(loc.latitude, loc.longitude)
-                val jumpDistanceMeters = startLatLng.distanceTo(targetLatLng)
-
-                val now = android.os.SystemClock.elapsedRealtime()
-                val elapsedSinceLastFix = if (lastFixTimestamp == 0L) 850L else (now - lastFixTimestamp)
-                lastFixTimestamp = now
-
-                markerAnimator?.cancel()
-
-                if (jumpDistanceMeters > 300.0) {
-                    MapDebugLogger.log("UserMarker", "Veliki skok lokacije (${jumpDistanceMeters}m), instant premještanje bez animacije")
-                    viewModel.symbolMutex.withLock {
-                        val sym = userSymbol
-                        if (sym != null) {
-                            try {
-                                sym.latLng = targetLatLng
-                                sym.iconRotate = rotation
-                                sm.update(sym)
-                            } catch (e: Exception) {
-                                MapDebugLogger.logMarkerError("UserMarker", "InstantJumpUpdate", e.message ?: "Unknown error")
-                                userSymbol = null
-                                lastAnimatedLocation = null
-                            }
-                        }
-                    }
-                } else {
-                    val animDuration = elapsedSinceLastFix.coerceIn(300L, 1500L)
-                    markerAnimator = android.animation.ValueAnimator.ofObject(
-                        com.amko.roadflow.utils.LatLngEvaluator(),
-                        startLatLng,
-                        targetLatLng
-                    ).apply {
-                        duration = animDuration
-                        interpolator = android.view.animation.LinearInterpolator()
-                        addUpdateListener { animator ->
-                            val animatedLatLng = animator.animatedValue as LatLng
-                            val sym = userSymbol
-                            if (sym == null) {
-                                cancel()
-                                return@addUpdateListener
-                            }
-                            if (viewModel.symbolMutex.tryLock()) {
-                                try {
-                                    if (isSymbolValid(sm, sym)) {
-                                        sym.latLng = animatedLatLng
-                                        sym.iconRotate = rotation
-                                        sm.update(sym)
-                                    } else {
-                                        throw IllegalStateException("Symbol no longer valid on SymbolManager")
-                                    }
-                                } catch (e: Exception) {
-                                    MapDebugLogger.logMarkerError("UserMarker", "AnimationUpdate", e.message ?: "Unknown error")
-                                    markerAnimator?.cancel()
-                                    userSymbol = null
-                                    lastAnimatedLocation = null
-                                } finally {
-                                    viewModel.symbolMutex.unlock()
-                                }
-                            }
-                        }
-                        start()
-                    }
-                }
-            }
-            if (!didInitialZoom) {
-                MapDebugLogger.log("Camera", "Executing initial zoom")
-                didInitialZoom = true
-                locationFound = true
-                map.animateCamera(
-                    CameraUpdateFactory.newCameraPosition(
-                        CameraPosition.Builder()
-                            .target(LatLng(loc.latitude, loc.longitude))
-                            .zoom(if (isActiveTracking) 17.0 else 14.0)
-                            .tilt(if (isActiveTracking) 45.0 else 0.0)
-                            .bearing(if (isActiveTracking) userHeading else 0.0)
-                            .build()
-                    ), 1000
-                )
-            } else if (isActiveTracking && !isTransitioningToTracking) {
-            map.easeCamera(
+        if (!didInitialZoom) {
+            didInitialZoom = true
+            locationFound = true
+            lastAnimatedLocation = loc
+            lastAnimatedBearing = targetRotation
+            pushUserGeoJson(loc.latitude, loc.longitude, targetRotation, force = true)
+            map.animateCamera(
                 CameraUpdateFactory.newCameraPosition(
                     CameraPosition.Builder()
                         .target(LatLng(loc.latitude, loc.longitude))
-                        .zoom(map.cameraPosition.zoom)
-                        .tilt(45.0)
-                        .bearing(userHeading)
+                        .zoom(if (isActiveTracking) 17.0 else 14.0)
+                        .tilt(if (isActiveTracking) 45.0 else 0.0)
+                        .bearing(if (isActiveTracking) userHeading else 0.0)
                         .build()
-                ), 300
+                ), 1000
             )
+        } else if (!locChanged && !bearingChanged) {
+        } else if (!isActiveTracking) {
+            lastAnimatedLocation = loc
+            lastAnimatedBearing = targetRotation
+            pushUserGeoJson(loc.latitude, loc.longitude, targetRotation, force = true)
+        } else {
+            val previousLoc = lastAnimatedLocation
+            val previousBearing = lastAnimatedBearing
+            val startLatLng = if (previousLoc != null) LatLng(previousLoc.latitude, previousLoc.longitude) else LatLng(loc.latitude, loc.longitude)
+            val targetLatLng = LatLng(loc.latitude, loc.longitude)
+            val jumpDistanceMeters = startLatLng.distanceTo(targetLatLng)
+
+            lastAnimatedLocation = loc
+            lastAnimatedBearing = targetRotation
+
+            trackingAnimator?.cancel()
+
+            if (previousLoc == null || jumpDistanceMeters > 300.0 || !isTransitioningToTracking.not()) {
+                pushUserGeoJson(loc.latitude, loc.longitude, targetRotation, force = true)
+                if (!isTransitioningToTracking) {
+                    map.moveCamera(
+                        CameraUpdateFactory.newCameraPosition(
+                            CameraPosition.Builder()
+                                .target(targetLatLng)
+                                .zoom(17.0)
+                                .tilt(45.0)
+                                .bearing(targetRotation.toDouble())
+                                .build()
+                        )
+                    )
+                }
+            } else {
+                val startZoom = 17.0
+                trackingAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = TRACKING_ANIM_DURATION_MS
+                    interpolator = android.view.animation.DecelerateInterpolator()
+                    addUpdateListener { animator ->
+                        val fraction = animator.animatedValue as Float
+                        val animatedLat = startLatLng.latitude + (targetLatLng.latitude - startLatLng.latitude) * fraction
+                        val animatedLng = startLatLng.longitude + (targetLatLng.longitude - startLatLng.longitude) * fraction
+                        val animatedBearing = shortestAngleLerp(previousBearing, targetRotation, fraction)
+
+                        pushUserGeoJson(animatedLat, animatedLng, animatedBearing)
+
+                        map.moveCamera(
+                            CameraUpdateFactory.newCameraPosition(
+                                CameraPosition.Builder()
+                                    .target(LatLng(animatedLat, animatedLng))
+                                    .zoom(startZoom)
+                                    .tilt(45.0)
+                                    .bearing(animatedBearing.toDouble())
+                                    .build()
+                            )
+                        )
+                    }
+                    start()
+                }
+            }
         }
-    }
     }
 
 
@@ -829,31 +630,81 @@ fun MapScreen(
                                 }
                             )
 
-                            val sm = SymbolManager(view, map, style).also {
-                                it.iconAllowOverlap = true
-                                it.iconIgnorePlacement = true
-                                it.textAllowOverlap = true
-                                it.textIgnorePlacement = true
-                                symbolManager = it
-                                symbolManagerGeneration = symbolManagerGeneration + 1
-                            }
-                            sm.addClickListener { symbol ->
-                                val data = symbol.data
-                                val index = if (data != null && data.isJsonPrimitive && data.asJsonPrimitive.isNumber) {
-                                    data.asInt
-                                } else {
-                                    null
+                            style.addSource(
+                                org.maplibre.android.style.sources.GeoJsonSource(
+                                    RADAR_SOURCE_ID,
+                                    FeatureCollection.fromFeatures(emptyList())
+                                )
+                            )
+
+                            style.addLayer(
+                                org.maplibre.android.style.layers.SymbolLayer(RADAR_LAYER_ID, RADAR_SOURCE_ID).apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.iconImage(
+                                            org.maplibre.android.style.expressions.Expression.get("iconId")
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(1.0f),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap(true),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true)
+                                    )
                                 }
-                                if (index != null) {
-                                    viewModel.selectRadar(activeRadars.getOrNull(index))
+                            )
+
+                            style.addSource(
+                                org.maplibre.android.style.sources.GeoJsonSource(
+                                    DESTINATION_SOURCE_ID,
+                                    FeatureCollection.fromFeatures(emptyList())
+                                )
+                            )
+
+                            style.addLayer(
+                                org.maplibre.android.style.layers.SymbolLayer(DESTINATION_LAYER_ID, DESTINATION_SOURCE_ID).apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.iconImage(DESTINATION_ICON_ID),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(1.0f),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap(true),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true)
+                                    )
+                                }
+                            )
+
+                            style.addSource(
+                                org.maplibre.android.style.sources.GeoJsonSource(
+                                    USER_SOURCE_ID,
+                                    FeatureCollection.fromFeatures(emptyList())
+                                )
+                            )
+
+                            style.addLayer(
+                                org.maplibre.android.style.layers.SymbolLayer(USER_LAYER_ID, USER_SOURCE_ID).apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.iconImage(USER_ICON_ID),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(1.2f),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconRotate(
+                                            org.maplibre.android.style.expressions.Expression.get("rotation")
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconRotationAlignment(
+                                            org.maplibre.android.style.layers.Property.ICON_ROTATION_ALIGNMENT_MAP
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap(true),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true)
+                                    )
+                                }
+                            )
+
+                            map.addOnMapClickListener { point ->
+                                val screenPoint = map.projection.toScreenLocation(point)
+                                val features = map.queryRenderedFeatures(screenPoint, RADAR_LAYER_ID)
+                                if (features.isNotEmpty()) {
+                                    val index = features[0].getProperty("index")?.asInt
+                                    if (index != null) {
+                                        viewModel.selectRadar(activeRadars.getOrNull(index))
+                                    } else {
+                                        viewModel.selectRadar(null)
+                                    }
                                 } else {
                                     viewModel.selectRadar(null)
                                 }
-                                true
-                            }
-
-                            map.addOnMapClickListener {
-                                viewModel.selectRadar(null)
                                 true
                             }
 
@@ -884,7 +735,6 @@ fun MapScreen(
                             }
 
                             isMapReady = true
-                            MapDebugLogger.log("MapScreen", "Map rendering and Style fully loaded")
                         }
                     }
                 }
@@ -1070,7 +920,7 @@ fun MapScreen(
 
                                     val map = mapRef ?: return@launch
                                     if (isActiveTracking) {
-                                        MapDebugLogger.log("MapScreen", "User manually stopped tracking")
+                                        isCameraLocked = true
                                         viewModel.locationService.stopActiveTracking()
                                         viewModel.stopBackgroundTracking()
                                         alertService.stopAlerts()
@@ -1088,9 +938,9 @@ fun MapScreen(
                                         )
 
                                         delay(800)
+                                        isCameraLocked = false
                                         viewModel.locationService.startPassiveTracking()
                                     } else {
-                                        MapDebugLogger.log("MapScreen", "User manually started tracking")
                                         val uLoc = userLocation
                                         val dest = selectedDestination
                                         if (dest != null && uLoc != null) {
@@ -1126,6 +976,7 @@ fun MapScreen(
                                             alertService.checkProximity(loc)
                                             val currentLoc = viewModel.locationService.location.value
                                             isTransitioningToTracking = true
+                                            isCameraLocked = true
                                             map.animateCamera(
                                                 CameraUpdateFactory.newCameraPosition(
                                                     CameraPosition.Builder()
@@ -1136,8 +987,8 @@ fun MapScreen(
                                                         .build()
                                                 ), 500,
                                                 object : MapLibreMap.CancelableCallback {
-                                                    override fun onCancel() { isTransitioningToTracking = false }
-                                                    override fun onFinish() { isTransitioningToTracking = false }
+                                                    override fun onCancel() { isTransitioningToTracking = false; isCameraLocked = false }
+                                                    override fun onFinish() { isTransitioningToTracking = false; isCameraLocked = false }
                                                 }
                                             )
                                         }
@@ -1238,7 +1089,7 @@ fun MapScreen(
 
                                     val map = mapRef ?: return@launch
                                     if (isActiveTracking) {
-                                        MapDebugLogger.log("MapScreen", "User manually stopped tracking")
+                                        isCameraLocked = true
                                         viewModel.locationService.stopActiveTracking()
                                         viewModel.stopBackgroundTracking()
                                         alertService.stopAlerts()
@@ -1256,9 +1107,9 @@ fun MapScreen(
                                         )
 
                                         delay(800)
+                                        isCameraLocked = false
                                         viewModel.locationService.startPassiveTracking()
                                     } else {
-                                        MapDebugLogger.log("MapScreen", "User manually started tracking")
                                         val uLoc = userLocation
                                         val dest = selectedDestination
                                         if (dest != null && uLoc != null) {
@@ -1294,6 +1145,7 @@ fun MapScreen(
                                             alertService.checkProximity(loc)
                                             val currentLoc = viewModel.locationService.location.value
                                             isTransitioningToTracking = true
+                                            isCameraLocked = true
                                             map.animateCamera(
                                                 CameraUpdateFactory.newCameraPosition(
                                                     CameraPosition.Builder()
@@ -1304,8 +1156,8 @@ fun MapScreen(
                                                         .build()
                                                 ), 500,
                                                 object : MapLibreMap.CancelableCallback {
-                                                    override fun onCancel() { isTransitioningToTracking = false }
-                                                    override fun onFinish() { isTransitioningToTracking = false }
+                                                    override fun onCancel() { isTransitioningToTracking = false; isCameraLocked = false }
+                                                    override fun onFinish() { isTransitioningToTracking = false; isCameraLocked = false }
                                                 }
                                             )
                                         }
@@ -1402,27 +1254,6 @@ fun MapScreen(
                 }
             }
 
-            Button(
-                onClick = {
-                    val result = MapDebugLogger.saveToDownloads(context)
-                    if (result != null) {
-                        android.widget.Toast.makeText(context, result, android.widget.Toast.LENGTH_LONG).show()
-                    } else {
-                        android.widget.Toast.makeText(context, "Greška pri čuvanju loga!", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = androidx.compose.ui.graphics.Color(0xFF4CAF50)
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
-            ) {
-                Text(
-                    text = "SAČUVAJ LOG",
-                    color = androidx.compose.ui.graphics.Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-            }
 
             selectedRadar?.let { radar ->
                 RadarInfoCard(
