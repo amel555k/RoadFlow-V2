@@ -95,12 +95,12 @@ private fun createDestinationBitmap(context: android.content.Context): android.g
     return bitmap
 }
 
-private fun userFeature(lat: Double, lng: Double, rotation: Float): FeatureCollection {
+private fun userFeature(lat: Double, lng: Double, rotation: Float, iconScale: Float): FeatureCollection {
     val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat))
     feature.addNumberProperty("rotation", rotation)
+    feature.addNumberProperty("iconScale", iconScale)
     return FeatureCollection.fromFeature(feature)
 }
-
 private fun destinationFeature(latLng: LatLng?): FeatureCollection {
     if (latLng == null) return FeatureCollection.fromFeatures(emptyList())
     return FeatureCollection.fromFeature(Feature.fromGeometry(Point.fromLngLat(latLng.longitude, latLng.latitude)))
@@ -211,8 +211,9 @@ fun MapScreen(
         val now = System.nanoTime()
         if (!force && now - lastUserGeoJsonUpdateNanos < MIN_GEOJSON_UPDATE_INTERVAL_NANOS) return
         lastUserGeoJsonUpdateNanos = now
+        val iconScale = if (isActiveTracking) 1.8f else 1.4f
         style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(USER_SOURCE_ID)
-            ?.setGeoJson(userFeature(lat, lng, rotation))
+            ?.setGeoJson(userFeature(lat, lng, rotation, iconScale))
     }
 
     LaunchedEffect(Unit) {
@@ -323,6 +324,25 @@ fun MapScreen(
 
     val orientation = LocalConfiguration.current.orientation
     val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    LaunchedEffect(isLandscape, isActiveTracking, isMapReady) {
+        val map = mapRef ?: return@LaunchedEffect
+        if (!isMapReady) return@LaunchedEffect
+        if (!isActiveTracking) return@LaunchedEffect
+        val loc = userLocation ?: return@LaunchedEffect
+        val correctedPadding = doubleArrayOf(0.0, map.height * 0.65, 0.0, 0.0)
+        map.moveCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder()
+                    .target(LatLng(loc.latitude, loc.longitude))
+                    .zoom(17.0)
+                    .tilt(45.0)
+                    .bearing(userHeading)
+                    .padding(correctedPadding)
+                    .build()
+            )
+        )
+    }
 
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -440,6 +460,7 @@ fun MapScreen(
         map.uiSettings.isTiltGesturesEnabled = gesturesAllowed
 
         val targetRotation = if (isActiveTracking) userHeading.toFloat() else 0f
+        val trackingPadding = if (isActiveTracking) doubleArrayOf(0.0, map.height * 0.65, 0.0, 0.0) else doubleArrayOf(0.0, 0.0, 0.0, 0.0)
 
         val locChanged = lastAnimatedLocation == null ||
                 loc.latitude != lastAnimatedLocation?.latitude ||
@@ -459,6 +480,7 @@ fun MapScreen(
                         .zoom(if (isActiveTracking) 17.0 else 14.0)
                         .tilt(if (isActiveTracking) 45.0 else 0.0)
                         .bearing(if (isActiveTracking) userHeading else 0.0)
+                        .padding(trackingPadding)
                         .build()
                 ), 1000
             )
@@ -490,6 +512,7 @@ fun MapScreen(
                                 .zoom(17.0)
                                 .tilt(45.0)
                                 .bearing(targetRotation.toDouble())
+                                .padding(trackingPadding)
                                 .build()
                         )
                     )
@@ -519,6 +542,7 @@ fun MapScreen(
                                     .zoom(startZoom)
                                     .tilt(45.0)
                                     .bearing(animatedBearing.toDouble())
+                                    .padding(trackingPadding)
                                     .build()
                             )
                         )
@@ -688,7 +712,9 @@ fun MapScreen(
                                 org.maplibre.android.style.layers.SymbolLayer(USER_LAYER_ID, USER_SOURCE_ID).apply {
                                     setProperties(
                                         org.maplibre.android.style.layers.PropertyFactory.iconImage(USER_ICON_ID),
-                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(1.2f),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(
+                                            org.maplibre.android.style.expressions.Expression.get("iconScale")
+                                        ),
                                         org.maplibre.android.style.layers.PropertyFactory.iconRotate(
                                             org.maplibre.android.style.expressions.Expression.get("rotation")
                                         ),
@@ -907,17 +933,18 @@ fun MapScreen(
                     horizontalArrangement = Arrangement.spacedBy(15.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    FilterButton(
-                        text = "DANAS",
-                        isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
-                        enabled = !isActiveTracking,
-                        onClick = { viewModel.setFilter(MapViewModel.RadarFilter.TODAY) }
-                    )
-                    FilterButton(
-                        text = "AKTIVNI",
-                        isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
-                        onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE) }
-                    )
+                    if (!isActiveTracking) {
+                        FilterButton(
+                            text = "DANAS",
+                            isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
+                            onClick = { viewModel.setFilter(MapViewModel.RadarFilter.TODAY) }
+                        )
+                        FilterButton(
+                            text = "AKTIVNI",
+                            isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
+                            onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE) }
+                        )
+                    }
 
                     if (didInitialZoom && locationFound && isGpsEnabled) {
                         Button(
@@ -942,6 +969,7 @@ fun MapScreen(
                                                     .zoom(13.0)
                                                     .tilt(0.0)
                                                     .bearing(0.0)
+                                                    .padding(doubleArrayOf(0.0, 0.0, 0.0, 0.0))
                                                     .build()
                                             ), 800
                                         )
@@ -1111,6 +1139,7 @@ fun MapScreen(
                                                     .zoom(13.0)
                                                     .tilt(0.0)
                                                     .bearing(0.0)
+                                                    .padding(doubleArrayOf(0.0, 0.0, 0.0, 0.0))
                                                     .build()
                                             ), 800
                                         )
@@ -1249,17 +1278,18 @@ fun MapScreen(
                         }
                     }
 
-                    FilterButton(
-                        text = "AKTIVNI",
-                        isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
-                        onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE) }
-                    )
-                    FilterButton(
-                        text = "DANAS",
-                        isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
-                        enabled = !isActiveTracking,
-                        onClick = { viewModel.setFilter(MapViewModel.RadarFilter.TODAY) }
-                    )
+                    if (!isActiveTracking) {
+                        FilterButton(
+                            text = "AKTIVNI",
+                            isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
+                            onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE) }
+                        )
+                        FilterButton(
+                            text = "DANAS",
+                            isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
+                            onClick = { viewModel.setFilter(MapViewModel.RadarFilter.TODAY) }
+                        )
+                    }
                 }
             }
 
