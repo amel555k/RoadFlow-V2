@@ -140,6 +140,11 @@ fun MainScreen(
             }
         }
     }
+    LaunchedEffect(isRefreshing) {
+        if (!isRefreshing) {
+            nowTick = System.currentTimeMillis()
+        }
+    }
     val canPullToRefresh by viewModel.canPullToRefresh.collectAsState()
 
     val selectedCantonLabel = cantonList.firstOrNull { it.first == selectedCanton }?.second ?: ""
@@ -264,7 +269,7 @@ fun MainScreen(
                                             }
                                         }
                                         is RadarListItem.RadarEntry -> {
-                                            RadarItem(radar = item.radar)
+                                            RadarItem(radar = item.radar, nowTick = nowTick)
                                         }
                                         is RadarListItem.Spacer -> {
                                             Spacer(modifier = Modifier.height(16.dp))

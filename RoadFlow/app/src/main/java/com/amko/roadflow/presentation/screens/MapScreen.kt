@@ -325,19 +325,27 @@ fun MapScreen(
     val orientation = LocalConfiguration.current.orientation
     val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    val density = LocalContext.current.resources.displayMetrics.density
+    val screenHeightPx = LocalConfiguration.current.screenHeightDp * density
+    val currentMapPadding = (screenHeightPx * 0.65).toDouble()
+
     LaunchedEffect(isLandscape, isActiveTracking, isMapReady) {
         val map = mapRef ?: return@LaunchedEffect
         if (!isMapReady) return@LaunchedEffect
         if (!isActiveTracking) return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
-        val correctedPadding = doubleArrayOf(0.0, map.height * 0.65, 0.0, 0.0)
+
+        trackingAnimator?.cancel()
+
+        val correctedPadding = doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0)
+
         map.moveCamera(
             CameraUpdateFactory.newCameraPosition(
                 CameraPosition.Builder()
                     .target(LatLng(loc.latitude, loc.longitude))
                     .zoom(17.0)
                     .tilt(45.0)
-                    .bearing(userHeading)
+                    .bearing(userHeading.toDouble())
                     .padding(correctedPadding)
                     .build()
             )
@@ -460,8 +468,8 @@ fun MapScreen(
         map.uiSettings.isTiltGesturesEnabled = gesturesAllowed
 
         val targetRotation = if (isActiveTracking) userHeading.toFloat() else 0f
-        val trackingPadding = if (isActiveTracking) doubleArrayOf(0.0, map.height * 0.65, 0.0, 0.0) else doubleArrayOf(0.0, 0.0, 0.0, 0.0)
 
+        val trackingPadding = if (isActiveTracking) doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0) else doubleArrayOf(0.0, 0.0, 0.0, 0.0)
         val locChanged = lastAnimatedLocation == null ||
                 loc.latitude != lastAnimatedLocation?.latitude ||
                 loc.longitude != lastAnimatedLocation?.longitude
@@ -956,6 +964,7 @@ fun MapScreen(
 
                                     val map = mapRef ?: return@launch
                                     if (isActiveTracking) {
+                                        trackingAnimator?.cancel()
                                         isCameraLocked = true
                                         viewModel.locationService.stopActiveTracking()
                                         viewModel.stopBackgroundTracking()
@@ -1126,6 +1135,7 @@ fun MapScreen(
 
                                     val map = mapRef ?: return@launch
                                     if (isActiveTracking) {
+                                        trackingAnimator?.cancel()
                                         isCameraLocked = true
                                         viewModel.locationService.stopActiveTracking()
                                         viewModel.stopBackgroundTracking()
