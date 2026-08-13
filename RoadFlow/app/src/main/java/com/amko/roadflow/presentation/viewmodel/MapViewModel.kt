@@ -1,22 +1,21 @@
 package com.amko.roadflow.presentation.viewmodel
 
-import android.R.attr.delay
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.amko.roadflow.data.local.FirebaseService
+import com.amko.roadflow.data.local.LocationTrackingService
 import com.amko.roadflow.data.local.RadarAlertService
 import com.amko.roadflow.data.local.RadarConfig
 import com.amko.roadflow.data.local.RadarParser
-import com.amko.roadflow.data.local.FirebaseService
-import com.amko.roadflow.data.local.LocationTrackingService
 import com.amko.roadflow.data.local.RadarTrackingService
 import com.amko.roadflow.domain.model.RadarData
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.delay
 
 class MapViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -87,23 +86,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val startTime = System.currentTimeMillis()
-
                 parser.parseAllLocationsAsFlow().collect { }
 
                 val all = parser.getExpandedRadarsForMapAsync()
                 _allRadars.value = all
 
-                val now = java.time.LocalTime.now()
-                val active = all.filter { radar ->
-                    radar.time != "INFO" && isActiveNow(radar.time, now)
-                }
-
-                _activeRadars.value = active + getStacionarni()
-                RadarTrackingService.setActiveRadars(_activeRadars.value)
-
-                val endTime = System.currentTimeMillis()
-                android.util.Log.d("MapOptimization", "loadRadars() ZAVRŠENO. Svi radari: ${all.size}, Za iscrtati (Aktivni + Stacionarni): ${_activeRadars.value.size}. Vrijeme obrade: ${endTime - startTime} ms")
+                applyCurrentFilter()
 
                 _isLoading.value = false
             } catch (e: Exception) {
@@ -126,7 +114,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    enum class RadarFilter { ACTIVE, TODAY}
+    enum class RadarFilter { ACTIVE, TODAY, ALL }
 
     fun setFilter(filter: RadarFilter) {
         _selectedFilter.value = filter
@@ -136,15 +124,25 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun applyCurrentFilter() {
-        val now = java.time.LocalTime.now()
+        val now = LocalTime.now()
         _activeRadars.value = when (_selectedFilter.value) {
             RadarFilter.ACTIVE -> _allRadars.value.filter {
                 it.time != "INFO" && isActiveNow(it.time, now)
             } + getStacionarni()
+
             RadarFilter.TODAY -> _allRadars.value.filter {
                 it.time != "INFO"
             } + getStacionarni()
+
+            RadarFilter.ALL -> getAllConfigRadars()
         }
+        android.util.Log.d(
+            "RadarMarkers",
+            "applyCurrentFilter filter=${_selectedFilter.value} " +
+                    "_allRadars.size=${_allRadars.value.size} " +
+                    "RadarConfig.coordinates.size=${RadarConfig.coordinates.size} " +
+                    "result.size=${_activeRadars.value.size}"
+        )
         RadarTrackingService.setActiveRadars(_activeRadars.value)
     }
 
@@ -152,7 +150,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             while (true) {
                 delay(60_000L)
-                applyCurrentFilter()
+                if (_selectedFilter.value == RadarFilter.ACTIVE) {
+                    applyCurrentFilter()
+                }
             }
         }
     }
@@ -198,6 +198,18 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
+    private fun getAllConfigRadars() = RadarConfig.coordinates
+        .map { coord ->
+            RadarData(
+                city = coord.city ?: coord.mainName,
+                time = "00:00 do 24:00",
+                location = coord.mainName,
+                latitude = coord.latitude,
+                longitude = coord.longitude,
+                speedLimit = coord.speedLimit,
+                coordinate = coord
+            )
+        }
 
     override fun onCleared() {
         super.onCleared()

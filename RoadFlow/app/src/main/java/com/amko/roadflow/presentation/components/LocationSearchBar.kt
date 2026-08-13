@@ -42,6 +42,7 @@ data class SearchResult(
 @Composable
 fun LocationSearchBar(
     onLocationSelected: (LatLng, String) -> Unit,
+    onExpandedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isExpanded by remember { mutableStateOf(false) }
@@ -64,7 +65,10 @@ fun LocationSearchBar(
     Box(modifier = modifier) {
         if (!isExpanded) {
             FloatingActionButton(
-                onClick = { isExpanded = true },
+                onClick = {
+                    isExpanded = true
+                    onExpandedChange(true)
+                },
                 containerColor = Color.White,
                 contentColor = Color(0xFF004E5A),
                 shape = CircleShape,
@@ -94,6 +98,7 @@ fun LocationSearchBar(
                         IconButton(
                             onClick = {
                                 isExpanded = false
+                                onExpandedChange(false)
                                 query = ""
                                 searchResults = emptyList()
                             }
@@ -158,6 +163,7 @@ fun LocationSearchBar(
                                                 result.displayName
                                             )
                                             isExpanded = false
+                                            onExpandedChange(false)
                                             query = ""
                                             searchResults = emptyList()
                                         }

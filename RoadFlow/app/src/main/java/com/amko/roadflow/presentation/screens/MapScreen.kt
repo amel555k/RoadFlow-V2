@@ -58,6 +58,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import androidx.compose.ui.layout.onSizeChanged
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
@@ -194,6 +195,7 @@ fun MapScreen(
     var selectedDestination by remember { mutableStateOf<LatLng?>(null) }
     var destinationScreenPoint by remember { mutableStateOf<PointF?>(null) }
     var isCalculatingRoute by remember { mutableStateOf(false) }
+    var isSearchExpanded by remember { mutableStateOf(false) }
     val routingService = remember { RoutingService() }
 
     fun updateDestinationScreenPoint() {
@@ -373,8 +375,6 @@ fun MapScreen(
     LaunchedEffect(activeRadars, styleRef) {
         val style = styleRef ?: return@LaunchedEffect
         val requestRadars = activeRadars
-        val requestId = System.currentTimeMillis()
-
 
         val radarFeatures = withContext(Dispatchers.Default) {
             requestRadars.mapIndexedNotNull { index, radar ->
@@ -389,7 +389,15 @@ fun MapScreen(
             }
         }
 
-
+        val drawnRadars = requestRadars.filterIndexed { index, radar ->
+            radar.latitude != null && radar.longitude != null
+        }
+        val stacionarniCount = drawnRadars.count { it.coordinate?.stacionaran == true }
+        val mobilniCount = drawnRadars.size - stacionarniCount
+        android.util.Log.d(
+            "RadarMarkers",
+            "Iscrtano markera: ${radarFeatures.size} (stacionarni=$stacionarniCount, mobilni=$mobilniCount)"
+        )
         val radius = context.getSharedPreferences("sound_settings", android.content.Context.MODE_PRIVATE)
             .getInt("alert_radius", 200).toDouble()
         val zoneFeatureCollection = withContext(Dispatchers.Default) {
@@ -562,12 +570,15 @@ fun MapScreen(
     }
 
 
+    var bottomNavSizePx by remember { mutableStateOf(0) }
+    val bottomNavSizeDp = with(androidx.compose.ui.platform.LocalDensity.current) { bottomNavSizePx.toDp() }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .let {
-                    if (isLandscape) it.padding(start = 88.dp) else it.padding(bottom = 80.dp)
+                    if (isLandscape) it.padding(start = bottomNavSizeDp) else it.padding(bottom = bottomNavSizeDp)
                 }
         ) {
             AndroidView(
@@ -795,9 +806,12 @@ fun MapScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!isActiveTracking) {
+                if (!isActiveTracking && !isCalculatingRoute) {
                     Box(modifier = Modifier.weight(1f, fill = false)) {
                         LocationSearchBar(
+                            onExpandedChange = { expanded ->
+                                isSearchExpanded = expanded
+                            },
                             onLocationSelected = { latLng, _ ->
                                 selectedDestination = latLng
                                 currentRouteResult = null
@@ -813,31 +827,50 @@ fun MapScreen(
                         )
                     }
                 }
+            }
 
-                if (currentRouteResult != null || isCalculatingRoute) {
+            if ((currentRouteResult != null || isCalculatingRoute) && !isSearchExpanded) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(
+                            top = 20.dp,
+                            start = if (isLandscape) (if (isActiveTracking) 40.dp else 160.dp) else 16.dp,
+                            end = if (isLandscape) (if (isActiveTracking) 180.dp else 160.dp) else 16.dp
+                        )
+                        .fillMaxWidth()
+                ) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF004E5A)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                        colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF4D7079)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (isCalculatingRoute) {
-                                Text(
-                                    text = "Izračunavam...",
-                                    color = androidx.compose.ui.graphics.Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    color = androidx.compose.ui.graphics.Color.White,
-                                    strokeWidth = 2.dp
-                                )
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Izračunavam...",
+                                        color = androidx.compose.ui.graphics.Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = if (isLandscape) 20.sp else 16.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(if (isLandscape) 22.dp else 18.dp),
+                                        color = androidx.compose.ui.graphics.Color.White,
+                                        strokeWidth = 2.dp
+                                    )
+                                }
                             } else if (currentRouteResult != null) {
                                 val route = currentRouteResult!!
                                 val totalMinutes = (route.durationSeconds / 60).toInt()
@@ -851,35 +884,48 @@ fun MapScreen(
                                 }
 
                                 val km = String.format("%.1f km", route.distanceMeters / 1000.0)
+                                val eta = java.time.LocalTime.now().plusSeconds(route.durationSeconds.toLong())
+                                val etaFormatted = eta.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
 
-                                Column {
-                                    Text(
-                                        text = "Ruta: $km",
-                                        color = androidx.compose.ui.graphics.Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                    Text(
-                                        text = "Vrijeme: $timeFormatted",
-                                        color = androidx.compose.ui.graphics.Color(0xFFD2F7FF),
-                                        fontSize = 12.sp
-                                    )
-                                }
+                                val infoFontSize = if (isLandscape) 20.sp else 16.sp
 
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = km,
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = infoFontSize,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = timeFormatted,
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = infoFontSize,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "$etaFormatted",
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = infoFontSize,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.weight(1f)
+                                )
 
                                 IconButton(
                                     onClick = {
                                         selectedDestination = null
                                         currentRouteResult = null
                                     },
-                                    modifier = Modifier.size(28.dp)
+                                    modifier = Modifier.size(if (isLandscape) 32.dp else 28.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Ukloni rutu",
                                         tint = androidx.compose.ui.graphics.Color.White,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(if (isLandscape) 22.dp else 18.dp)
                                     )
                                 }
                             }
@@ -920,6 +966,7 @@ fun MapScreen(
             }
 
             if (isActiveTracking) {
+                val hasActiveRoute = currentRouteResult != null
                 SpeedOverlay(
                     isInRadarZone = isInRadarZone,
                     speedLimitInZone = speedLimitInZone,
@@ -927,7 +974,11 @@ fun MapScreen(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(
-                            top = if (isLandscape) 20.dp else 50.dp,
+                            top = when {
+                                isLandscape -> 20.dp
+                                hasActiveRoute -> 130.dp
+                                else -> 50.dp
+                            },
                             end = 20.dp
                         )
                 )
@@ -951,6 +1002,12 @@ fun MapScreen(
                             text = "AKTIVNI",
                             isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
                             onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE) }
+                        )
+
+                        FilterButton(
+                            text = "SVI",
+                            isActive = selectedFilter == MapViewModel.RadarFilter.ALL,
+                            onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ALL) }
                         )
                     }
 
@@ -1299,6 +1356,11 @@ fun MapScreen(
                             isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
                             onClick = { viewModel.setFilter(MapViewModel.RadarFilter.TODAY) }
                         )
+                        FilterButton(
+                            text = "SVI",
+                            isActive = selectedFilter == MapViewModel.RadarFilter.ALL,
+                            onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ALL) }
+                        )
                     }
                 }
             }
@@ -1353,9 +1415,11 @@ fun MapScreen(
             currentRoute = currentRoute,
             onNavigate = onNavigate,
             isVertical = isLandscape,
-            modifier = Modifier.align(
-                if (isLandscape) Alignment.CenterStart else Alignment.BottomCenter
-            )
+            modifier = Modifier
+                .align(if (isLandscape) Alignment.CenterStart else Alignment.BottomCenter)
+                .onSizeChanged { size ->
+                    bottomNavSizePx = if (isLandscape) size.width else size.height
+                }
         )
     }
 }
