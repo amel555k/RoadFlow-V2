@@ -6,8 +6,11 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.display.DisplayManager
 import android.location.Location
 import android.os.Looper
+import android.view.Display
+import android.view.Surface
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -33,6 +36,9 @@ class LocationTrackingService(private val context: Context) {
     private val sensorManager: SensorManager =
         context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
+    private val displayManager: DisplayManager =
+        context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+
     private val roadsSnapService = RoadsSnapService()
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
 
@@ -44,8 +50,10 @@ class LocationTrackingService(private val context: Context) {
 
     private val _isActiveTracking = MutableStateFlow(false)
     val isActiveTracking: StateFlow<Boolean> = _isActiveTracking.asStateFlow()
+
     private val _speedKmh = MutableStateFlow(0f)
     val speedKmh: StateFlow<Float> = _speedKmh.asStateFlow()
+
     fun setInitialLocation(location: Location) {
         _location.value = location
     }
@@ -57,6 +65,7 @@ class LocationTrackingService(private val context: Context) {
     private val gravity = FloatArray(3)
     private val geomagnetic = FloatArray(3)
     private val rotationMatrix = FloatArray(9)
+    private val remappedMatrix = FloatArray(9)
     private val orientation = FloatArray(3)
 
     private val movementThresholdMeters = 1.0f
@@ -64,7 +73,6 @@ class LocationTrackingService(private val context: Context) {
     private var lastBearing = 0.0
     private var lastCompassBearing = 0.0
 
-    private var deviceOrientation = android.content.res.Configuration.ORIENTATION_PORTRAIT
     @SuppressLint("MissingPermission")
     fun startPassiveTracking() {
         stopPassiveTracking()
@@ -74,10 +82,7 @@ class LocationTrackingService(private val context: Context) {
             android.Manifest.permission.ACCESS_FINE_LOCATION
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
-        android.util.Log.d("LocationService", "startPassiveTracking - hasPermission: $hasPermission")
-
         if (!hasPermission) {
-            android.util.Log.d("LocationService", "NEMA DOZVOLE - tracking se ne pokrece")
             return
         }
 
@@ -88,7 +93,6 @@ class LocationTrackingService(private val context: Context) {
 
         passiveCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                android.util.Log.d("LocationService", "Lokacija primljena: ${result.lastLocation?.latitude}, ${result.lastLocation?.longitude}")
                 result.lastLocation?.let { loc ->
                     _location.value = loc
                 }
@@ -96,11 +100,10 @@ class LocationTrackingService(private val context: Context) {
         }
 
         fusedClient.requestLocationUpdates(request, passiveCallback!!, Looper.getMainLooper())
-        android.util.Log.d("LocationService", "requestLocationUpdates pozvan uspjesno")
+
         if (!_isActiveTracking.value) {
             startCompass()
         }
-
     }
 
     fun stopPassiveTracking() {
@@ -109,7 +112,6 @@ class LocationTrackingService(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-
     fun startActiveTracking() {
         stopActiveTracking()
         lastBearing = lastCompassBearing
@@ -129,11 +131,6 @@ class LocationTrackingService(private val context: Context) {
                     _speedKmh.value = speedKmh
 
                     updateBearing(loc, speedKmh)
-
-                    android.util.Log.d(
-                        "LocationService",
-                        "GPS fix: lat=${loc.latitude}, lng=${loc.longitude}, hasBearing=${loc.hasBearing()}, rawBearing=${if (loc.hasBearing()) loc.bearing else "N/A"}, speedKmh=$speedKmh, usedBearing=${_heading.value}"
-                    )
 
                     serviceScope.launch {
                         val snapped = roadsSnapService.snapToRoad(loc)
@@ -156,11 +153,6 @@ class LocationTrackingService(private val context: Context) {
         val smoothed = smoothBearing(lastBearing, targetBearing)
         lastBearing = smoothed
         _heading.value = smoothed
-
-        android.util.Log.d(
-            "LocationService",
-            "Bearing: raw=${if (loc.hasBearing()) loc.bearing else "N/A"}, speedKmh=$speedKmh, target=$targetBearing, smoothed=$smoothed"
-        )
     }
 
     private fun smoothBearing(current: Double, target: Double, factor: Double = 0.6): Double {
@@ -170,6 +162,7 @@ class LocationTrackingService(private val context: Context) {
         val result = current + diff * factor
         return (result + 360) % 360
     }
+
     fun stopActiveTracking() {
         _isActiveTracking.value = false
         activeCallback?.let { fusedClient.removeLocationUpdates(it) }
@@ -203,8 +196,17 @@ class LocationTrackingService(private val context: Context) {
 
                 val success = SensorManager.getRotationMatrix(rotationMatrix, null, gravity, geomagnetic)
                 if (success) {
-                    SensorManager.getOrientation(rotationMatrix, orientation)
-                    deviceOrientation = context.resources.configuration.orientation
+                    val display = displayManager.getDisplay(Display.DEFAULT_DISPLAY)
+                    val displayRotation = display?.rotation ?: Surface.ROTATION_0
+
+                    when (displayRotation) {
+                        Surface.ROTATION_90 -> SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_Y, SensorManager.AXIS_MINUS_X, remappedMatrix)
+                        Surface.ROTATION_180 -> SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_MINUS_X, SensorManager.AXIS_MINUS_Y, remappedMatrix)
+                        Surface.ROTATION_270 -> SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_MINUS_Y, SensorManager.AXIS_X, remappedMatrix)
+                        else -> SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_X, SensorManager.AXIS_Y, remappedMatrix)
+                    }
+
+                    SensorManager.getOrientation(remappedMatrix, orientation)
                     val azimuth = Math.toDegrees(orientation[0].toDouble())
                     val newCompassBearing = (azimuth + 360) % 360
 
@@ -244,7 +246,6 @@ class LocationTrackingService(private val context: Context) {
                 }
                 val ageMillis = android.os.SystemClock.elapsedRealtime() - (loc.elapsedRealtimeNanos / 1_000_000L)
                 if (ageMillis > maxCachedLocationAgeMillis) {
-                    android.util.Log.d("LocationService", "Odbacena keširana lokacija, starost: ${ageMillis}ms")
                     cont.resume(null)
                 } else {
                     cont.resume(loc)
