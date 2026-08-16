@@ -39,13 +39,28 @@ data class SearchResult(
     val lon: Double
 )
 
+private fun shortenLocationName(fullName: String): String {
+    val parts = fullName.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    if (parts.isEmpty()) return fullName
+
+    val words = parts[0].split(" ").filter { it.isNotEmpty() }
+    return if (words.size > 3) {
+        words.take(3).joinToString(" ")
+    } else {
+        parts[0]
+    }
+}
+
 @Composable
 fun LocationSearchBar(
     onLocationSelected: (LatLng, String) -> Unit,
     onExpandedChange: (Boolean) -> Unit = {},
+    onLocationCleared: () -> Unit = {},
+    selectedLocationName: String? = null,
     modifier: Modifier = Modifier
 ) {
     var isExpanded by remember { mutableStateOf(false) }
+    var expandedFromSelection by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -64,22 +79,72 @@ fun LocationSearchBar(
 
     Box(modifier = modifier) {
         if (!isExpanded) {
-            FloatingActionButton(
-                onClick = {
-                    isExpanded = true
-                    onExpandedChange(true)
-                },
-                containerColor = Color.White,
-                contentColor = Color(0xFF004E5A),
-                shape = CircleShape,
-                elevation = FloatingActionButtonDefaults.elevation(8.dp),
-                modifier = Modifier.size(50.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Pretraži adrese",
-                    modifier = Modifier.size(24.dp)
-                )
+            if (selectedLocationName != null) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = {
+                                isExpanded = true
+                                expandedFromSelection = true
+                                onExpandedChange(true)
+                                onLocationCleared()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Otvori pretragu",
+                                tint = Color(0xFF004E5A)
+                            )
+                        }
+
+                        Text(
+                            text = "Vaša lokacija → ${shortenLocationName(selectedLocationName)}",
+                            fontSize = 14.sp,
+                            color = Color.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        IconButton(
+                            onClick = { onLocationCleared() }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Otkaži destinaciju",
+                                tint = Color.Gray
+                            )
+                        }
+                    }
+                }
+            } else {
+                FloatingActionButton(
+                    onClick = {
+                        isExpanded = true
+                        onExpandedChange(true)
+                    },
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF004E5A),
+                    shape = CircleShape,
+                    elevation = FloatingActionButtonDefaults.elevation(8.dp),
+                    modifier = Modifier.size(50.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Pretraži adrese",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         } else {
             Card(
@@ -101,6 +166,10 @@ fun LocationSearchBar(
                                 onExpandedChange(false)
                                 query = ""
                                 searchResults = emptyList()
+                                if (expandedFromSelection) {
+                                    expandedFromSelection = false
+                                    onLocationCleared()
+                                }
                             }
                         ) {
                             Icon(
@@ -165,6 +234,7 @@ fun LocationSearchBar(
                                                 result.displayName
                                             )
                                             isExpanded = false
+                                            expandedFromSelection = false
                                             onExpandedChange(false)
                                             query = ""
                                             searchResults = emptyList()

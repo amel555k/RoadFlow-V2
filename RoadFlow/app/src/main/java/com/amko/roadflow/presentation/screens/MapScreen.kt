@@ -101,13 +101,13 @@ private fun createDestinationBitmap(context: android.content.Context): android.g
     val canvas = android.graphics.Canvas(bitmap)
     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
 
-    paint.color = android.graphics.Color.parseColor("#E53935")
+    paint.color = android.graphics.Color.BLACK
     canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
 
     paint.color = android.graphics.Color.WHITE
     canvas.drawCircle(size / 2f, size / 2f, size / 3.5f, paint)
 
-    paint.color = android.graphics.Color.parseColor("#E53935")
+    paint.color = android.graphics.Color.BLACK
     canvas.drawCircle(size / 2f, size / 2f, size / 7f, paint)
 
     return bitmap
@@ -471,6 +471,7 @@ fun MapScreen(
     var labelFractions by remember { mutableStateOf<Map<Int, Double>>(emptyMap()) }
 
     var selectedDestination by remember { mutableStateOf<LatLng?>(null) }
+    var selectedDestinationName by remember { mutableStateOf<String?>(null) }
     var destinationScreenPoint by remember { mutableStateOf<PointF?>(null) }
     var isCalculatingRoute by remember { mutableStateOf(false) }
     var isSearchExpanded by remember { mutableStateOf(false) }
@@ -490,6 +491,7 @@ fun MapScreen(
         routeAlternatives = emptyList()
         selectedRouteIndex = 0
         selectedDestination = null
+        selectedDestinationName = null
     }
 
     suspend fun computeRoutesTo(destination: LatLng) {
@@ -528,10 +530,13 @@ fun MapScreen(
             ?.setGeoJson(userFeature(lat, lng, rotation, iconScale))
     }
 
-    fun recomputeLabelFractions() {
+    fun recomputeLabelFractions(forceRelayout: Boolean = false) {
         val map = mapRef ?: return
         if (routeAlternatives.isEmpty()) {
             labelFractions = emptyMap()
+            return
+        }
+        if (!forceRelayout && labelFractions.keys.containsAll(routeAlternatives.indices.filter { routeAlternatives[it].coordinates.isNotEmpty() })) {
             return
         }
         val densityLocal = context.resources.displayMetrics.density
@@ -546,7 +551,6 @@ fun MapScreen(
             labelFractions
         )
     }
-
     LaunchedEffect(Unit) {
         while (true) {
             val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
@@ -791,8 +795,8 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(routeAlternatives, selectedRouteIndex) {
-        recomputeLabelFractions()
+    LaunchedEffect(routeAlternatives) {
+        recomputeLabelFractions(forceRelayout = true)
     }
 
     LaunchedEffect(routeAlternatives, selectedRouteIndex, styleRef, isActiveTracking, labelFractions) {
@@ -824,7 +828,7 @@ fun MapScreen(
                 hours > 0 -> "${hours}h"
                 else -> "${totalMinutes} min"
             }
-            val km = String.format("%.1f km", route.distanceMeters / 1000.0)
+            val km = String.format("%.0f km", route.distanceMeters / 1000.0)
             return Pair(timeFormatted, km)
         }
 
@@ -1422,50 +1426,23 @@ fun MapScreen(
             ) {
                 if (!isActiveTracking && !isCalculatingRoute) {
                     LocationSearchBar(
+                        selectedLocationName = selectedDestinationName,
                         onExpandedChange = { expanded ->
                             isSearchExpanded = expanded
                         },
-                        onLocationSelected = { latLng, _ ->
+                        onLocationSelected = { latLng, name ->
                             selectedDestination = latLng
+                            selectedDestinationName = name
                             routeAlternatives = emptyList()
                             selectedRouteIndex = 0
                             coroutineScope.launch {
                                 computeRoutesTo(latLng)
                             }
+                        },
+                        onLocationCleared = {
+                            clearRoute()
                         }
                     )
-
-                    Button(
-                        onClick = {
-                            val mockRoute = com.amko.roadflow.data.local.MockRouteData.getMockRoute()
-                            routeAlternatives = listOf(mockRoute)
-                            selectedRouteIndex = 0
-
-                            val lastCoord = mockRoute.coordinates.last()
-                            selectedDestination = LatLng(lastCoord.first, lastCoord.second)
-
-                            mapRef?.let { map ->
-                                val boundsBuilder = LatLngBounds.Builder()
-                                mockRoute.coordinates.forEach { (lat, lng) ->
-                                    boundsBuilder.include(LatLng(lat, lng))
-                                }
-                                map.animateCamera(
-                                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120)
-                                )
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = androidx.compose.ui.graphics.Color(0xFF004E5A)
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = "TEST RUTA",
-                            color = androidx.compose.ui.graphics.Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                 }
             }
             if (isActiveTracking && (currentRouteResult != null || isCalculatingRoute) && !isSearchExpanded) {
@@ -1522,7 +1499,7 @@ fun MapScreen(
                                     else -> "${totalMinutes} min"
                                 }
 
-                                val km = String.format("%.1f km", route.distanceMeters / 1000.0)
+                                val km = String.format("%.0f km", route.distanceMeters / 1000.0)
                                 val eta = java.time.LocalTime.now().plusSeconds(route.durationSeconds.toLong())
                                 val etaFormatted = eta.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
 
@@ -1570,32 +1547,6 @@ fun MapScreen(
                 }
             }
 
-            if (!isActiveTracking) {
-                destinationScreenPoint?.let { point ->
-                    val density = LocalContext.current.resources.displayMetrics.density
-                    val xDp = (point.x / density).dp - 16.dp
-                    val yDp = (point.y / density).dp - 48.dp
-
-                    Box(modifier = Modifier.offset(x = xDp, y = yDp)) {
-                        Surface(
-                            onClick = { clearRoute() },
-                            shape = CircleShape,
-                            color = androidx.compose.ui.graphics.Color.White,
-                            shadowElevation = 6.dp,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Otkaži destinaciju",
-                                    tint = androidx.compose.ui.graphics.Color(0xFFE53935),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
 
             if (isActiveTracking) {
                 val hasActiveRoute = currentRouteResult != null
@@ -1614,19 +1565,6 @@ fun MapScreen(
                             end = 20.dp
                         )
                 )
-
-                if (hasActiveRoute) {
-                    RoutingRecognitionOverlay(
-                        isSnapped = lastSnapWasSuccessful,
-                        distanceToRouteMeters = lastSnapDistanceMeters,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(
-                                top = if (isLandscape) 20.dp else 130.dp,
-                                start = if (isLandscape) 20.dp else 16.dp
-                            )
-                    )
-                }
             }
 
             if (isLandscape) {
