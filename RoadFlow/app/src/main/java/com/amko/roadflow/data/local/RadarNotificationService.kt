@@ -69,13 +69,20 @@ class RadarNotificationService : Service() {
         val prefs = getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
         val favoriteCity = prefs.getString("favorite_city", "") ?: ""
 
-        if (intent?.action == "ACTION_REFRESH") {
+        val parser = RadarParser(applicationContext, FirebaseService())
+        val isCachedToday = parser.isCachedForToday()
+
+        if (!isCachedToday) {
             startForeground(1001, createLoadingNotification(favoriteCity))
+        }
+
+        if (intent?.action == "ACTION_REFRESH") {
+            if (!isCachedToday) {
+                startForeground(1001, createLoadingNotification(favoriteCity))
+            }
             serviceScope.launch { fetchData() }
             return START_STICKY
         }
-
-        startForeground(1001, createLoadingNotification(favoriteCity))
 
         if (intent?.action == "UPDATE_CITY") {
             serviceScope.coroutineContext.cancelChildren()
@@ -131,17 +138,25 @@ class RadarNotificationService : Service() {
             return
         }
 
+        val firebaseService = FirebaseService()
+        val parser = RadarParser(applicationContext, firebaseService)
+
+        val isCachedToday = parser.isCachedForToday()
+        if (isCachedToday) {
+            val cached = parser.getActiveRadarsAsync()
+            currentRadars = cached
+            isNoInternetNoCache = false
+            updateNotification()
+        }
+
         val timeoutJob = serviceScope.launch {
             delay(30_000L)
-            if (isFetching) {
+            if (isFetching && !isCachedToday) {
                 withContext(Dispatchers.Main) {
                     notificationManager.notify(1001, createLoadingNotification(favoriteCity, showRefresh = true))
                 }
             }
         }
-
-        val firebaseService = FirebaseService()
-        val parser = RadarParser(applicationContext, firebaseService)
 
         try {
             withTimeout(30_000L) {
@@ -231,7 +246,7 @@ class RadarNotificationService : Service() {
         val builder = NotificationCompat.Builder(applicationContext, "radar_status_channel")
             .setContentTitle(if (favoriteCity.isBlank()) "RoadFlow" else favoriteCity)
             .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_notification1)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOnlyAlertOnce(true)
@@ -258,6 +273,12 @@ class RadarNotificationService : Service() {
 
         val notification = builder.build()
 
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            startForeground(1001, notification)
+        } else {
+            startForeground(1001, notification)
+        }
+
         withContext(Dispatchers.Main) {
             notificationManager.notify(1001, notification)
         }
@@ -280,7 +301,7 @@ class RadarNotificationService : Service() {
         val builder = NotificationCompat.Builder(applicationContext, "radar_status_channel")
             .setContentTitle(if (city.isBlank()) "RoadFlow" else city)
             .setContentText("Učitavanje...")
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_notification1)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOnlyAlertOnce(true)

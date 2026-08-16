@@ -1,5 +1,6 @@
 package com.amko.roadflow.data.local
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -26,6 +27,10 @@ class RoutingService {
                     if (!response.isSuccessful) return@withContext null
                     val body = response.body?.string() ?: return@withContext null
 
+                    Log.d("OSRM_DEBUG", "----------------- RAW OSRM JSON START -----------------")
+                    Log.d("OSRM_DEBUG", body)
+                    Log.d("OSRM_DEBUG", "----------------- RAW OSRM JSON END -------------------")
+
                     val json = JSONObject(body)
                     val routes = json.optJSONArray("routes")
                     if (routes == null || routes.length() == 0) return@withContext null
@@ -45,9 +50,12 @@ class RoutingService {
                         coordinates.add(Pair(lat, lon))
                     }
 
+                    Log.d("OSRM_DEBUG", "Distanca: $distance m, Trajanje: $duration s, Ukupno koordinata: ${coordinates.size}")
+
                     RouteResult(distance, duration, coordinates)
                 }
             } catch (e: Exception) {
+                Log.e("OSRM_DEBUG", "Greska pri dohvacanju rute", e)
                 null
             }
         }

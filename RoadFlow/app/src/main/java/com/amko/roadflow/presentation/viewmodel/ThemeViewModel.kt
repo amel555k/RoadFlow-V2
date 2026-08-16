@@ -24,11 +24,11 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadTheme(): AppTheme {
-        val themeName = prefs.getString("selected_theme", AppTheme.LIGHT.name)
+        val themeName = prefs.getString("selected_theme", AppTheme.DARK.name)
         return try {
-            AppTheme.valueOf(themeName ?: AppTheme.LIGHT.name)
+            AppTheme.valueOf(themeName ?: AppTheme.DARK.name)
         } catch (e: Exception) {
-            AppTheme.LIGHT
+            AppTheme.DARK
         }
     }
 }

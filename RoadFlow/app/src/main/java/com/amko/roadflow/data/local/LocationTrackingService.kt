@@ -24,6 +24,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -61,6 +62,7 @@ class LocationTrackingService(private val context: Context) {
     private var passiveCallback: LocationCallback? = null
     private var activeCallback: LocationCallback? = null
     private var sensorListener: SensorEventListener? = null
+    private var speedWatchdogJob: Job? = null
 
     private val gravity = FloatArray(3)
     private val geomagnetic = FloatArray(3)
@@ -72,6 +74,12 @@ class LocationTrackingService(private val context: Context) {
     private val minSpeedForBearingKmh = 8.0f
     private var lastBearing = 0.0
     private var lastCompassBearing = 0.0
+
+    private var lastFixLat: Double? = null
+    private var lastFixLng: Double? = null
+    private var lastFixElapsedRealtimeMs: Long = 0L
+    private val speedStaleTimeoutMs = 2500L
+    private val speedZeroDistanceMeters = 1.5f
 
     @SuppressLint("MissingPermission")
     fun startPassiveTracking() {
@@ -117,18 +125,39 @@ class LocationTrackingService(private val context: Context) {
         lastBearing = lastCompassBearing
         stopCompass()
         _isActiveTracking.value = true
+        lastFixLat = null
+        lastFixLng = null
+        lastFixElapsedRealtimeMs = 0L
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
             .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(movementThresholdMeters)
+            .setMinUpdateDistanceMeters(0f)
             .build()
 
         activeCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { loc ->
-                    val speedMs = if (loc.hasSpeed()) loc.speed else 0f
-                    val speedKmh = speedMs * 3.6f
+                    val nowElapsed = android.os.SystemClock.elapsedRealtime()
+
+                    val distanceFromLastFix = if (lastFixLat != null && lastFixLng != null) {
+                        val prev = Location("prev").apply {
+                            latitude = lastFixLat!!
+                            longitude = lastFixLng!!
+                        }
+                        prev.distanceTo(loc)
+                    } else null
+
+                    val rawSpeedMs = if (loc.hasSpeed()) loc.speed else 0f
+                    var speedKmh = rawSpeedMs * 3.6f
+
+                    if (distanceFromLastFix != null && distanceFromLastFix < speedZeroDistanceMeters && speedKmh < 3f) {
+                        speedKmh = 0f
+                    }
+
                     _speedKmh.value = speedKmh
+                    lastFixLat = loc.latitude
+                    lastFixLng = loc.longitude
+                    lastFixElapsedRealtimeMs = nowElapsed
 
                     updateBearing(loc, speedKmh)
 
@@ -141,6 +170,20 @@ class LocationTrackingService(private val context: Context) {
         }
 
         fusedClient.requestLocationUpdates(request, activeCallback!!, Looper.getMainLooper())
+
+        speedWatchdogJob?.cancel()
+        speedWatchdogJob = serviceScope.launch {
+            while (isActive) {
+                kotlinx.coroutines.delay(500)
+                if (!_isActiveTracking.value) continue
+                val last = lastFixElapsedRealtimeMs
+                if (last == 0L) continue
+                val staleFor = android.os.SystemClock.elapsedRealtime() - last
+                if (staleFor > speedStaleTimeoutMs && _speedKmh.value != 0f) {
+                    _speedKmh.value = 0f
+                }
+            }
+        }
     }
 
     private fun updateBearing(loc: Location, speedKmh: Float) {
@@ -167,6 +210,11 @@ class LocationTrackingService(private val context: Context) {
         _isActiveTracking.value = false
         activeCallback?.let { fusedClient.removeLocationUpdates(it) }
         activeCallback = null
+        speedWatchdogJob?.cancel()
+        speedWatchdogJob = null
+        lastFixLat = null
+        lastFixLng = null
+        lastFixElapsedRealtimeMs = 0L
         startCompass()
     }
 

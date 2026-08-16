@@ -30,16 +30,26 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.layout.onSizeChanged
 
 import com.amko.roadflow.R
+import com.amko.roadflow.data.local.ActiveTrackingAnimator
 import com.amko.roadflow.data.local.RouteResult
 import com.amko.roadflow.data.local.RoutingService
 import com.amko.roadflow.data.local.Secrets.MAP_API_KEY
+import com.amko.roadflow.data.local.TrackingRecorder
 import com.amko.roadflow.presentation.components.*
 import com.amko.roadflow.presentation.viewmodel.MapViewModel
 import com.amko.roadflow.utils.createCircleFeature
 import com.amko.roadflow.utils.createRadarBitmap
 import com.amko.roadflow.utils.createUserBitmap
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.Priority
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -58,7 +68,6 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
-import androidx.compose.ui.layout.onSizeChanged
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
@@ -73,9 +82,10 @@ private const val DESTINATION_SOURCE_ID = "destination-marker-source"
 private const val DESTINATION_LAYER_ID = "destination-marker-layer"
 
 private const val MIN_GEOJSON_UPDATE_INTERVAL_NANOS = 16_000_000L
-private const val TRACKING_ANIM_MIN_DURATION_MS = 400L
-private const val TRACKING_ANIM_MAX_DURATION_MS = 1500L
-private const val TRACKING_ANIM_FALLBACK_DURATION_MS = 800L
+private const val SNAP_DISTANCE_METERS = 20.0
+private const val SNAP_MAX_ANGLE_DIFF_DEGREES = 55.0
+private const val SNAP_DISTANCE_HYSTERESIS_METERS = 30.0
+private const val SNAP_ANGLE_HYSTERESIS_DEGREES = 70.0
 
 private fun createDestinationBitmap(context: android.content.Context): android.graphics.Bitmap {
     val density = context.resources.displayMetrics.density
@@ -102,16 +112,101 @@ private fun userFeature(lat: Double, lng: Double, rotation: Float, iconScale: Fl
     feature.addNumberProperty("iconScale", iconScale)
     return FeatureCollection.fromFeature(feature)
 }
+
 private fun destinationFeature(latLng: LatLng?): FeatureCollection {
     if (latLng == null) return FeatureCollection.fromFeatures(emptyList())
     return FeatureCollection.fromFeature(Feature.fromGeometry(Point.fromLngLat(latLng.longitude, latLng.latitude)))
 }
 
-private fun shortestAngleLerp(start: Float, end: Float, fraction: Float): Float {
-    var diff = (end - start) % 360f
-    if (diff > 180f) diff -= 360f
-    if (diff < -180f) diff += 360f
-    return (start + diff * fraction + 360f) % 360f
+private data class SnapResult(val lat: Double, val lng: Double, val bearing: Float, val distanceMeters: Double, val isAccepted: Boolean)
+
+private fun bearingBetween(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+    val lat1Rad = Math.toRadians(lat1)
+    val lat2Rad = Math.toRadians(lat2)
+    val dLngRad = Math.toRadians(lng2 - lng1)
+    val y = Math.sin(dLngRad) * Math.cos(lat2Rad)
+    val x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLngRad)
+    val bearingRad = Math.atan2(y, x)
+    return (Math.toDegrees(bearingRad) + 360.0) % 360.0
+}
+
+private fun angleDiff(a: Double, b: Double): Double {
+    var diff = (a - b) % 360.0
+    if (diff > 180.0) diff -= 360.0
+    if (diff < -180.0) diff += 360.0
+    return Math.abs(diff)
+}
+
+private fun metersPerDegreeLat(): Double = 111320.0
+private fun metersPerDegreeLng(atLat: Double): Double = 111320.0 * Math.cos(Math.toRadians(atLat))
+
+private fun snapToRoute(
+    userLat: Double,
+    userLng: Double,
+    userBearing: Double,
+    routeCoordinates: List<Pair<Double, Double>>,
+    wasSnappedLastTime: Boolean
+): SnapResult? {
+    if (routeCoordinates.size < 2) return null
+
+    val mPerLat = metersPerDegreeLat()
+    val mPerLng = metersPerDegreeLng(userLat)
+    val userX = userLng * mPerLng
+    val userY = userLat * mPerLat
+
+    var bestDistance = Double.MAX_VALUE
+    var bestLat = 0.0
+    var bestLng = 0.0
+    var bestSegmentBearing = 0.0
+    var found = false
+
+    for (i in 0 until routeCoordinates.size - 1) {
+        val (aLat, aLng) = routeCoordinates[i]
+        val (bLat, bLng) = routeCoordinates[i + 1]
+
+        val ax = aLng * mPerLng
+        val ay = aLat * mPerLat
+        val bx = bLng * mPerLng
+        val by = bLat * mPerLat
+
+        val dx = bx - ax
+        val dy = by - ay
+        val lengthSquared = dx * dx + dy * dy
+
+        val t = if (lengthSquared > 0.0) {
+            (((userX - ax) * dx + (userY - ay) * dy) / lengthSquared).coerceIn(0.0, 1.0)
+        } else 0.0
+
+        val projX = ax + t * dx
+        val projY = ay + t * dy
+
+        val distX = userX - projX
+        val distY = userY - projY
+        val distance = Math.sqrt(distX * distX + distY * distY)
+
+        if (distance < bestDistance) {
+            bestDistance = distance
+            bestLng = projX / mPerLng
+            bestLat = projY / mPerLat
+            bestSegmentBearing = bearingBetween(aLat, aLng, bLat, bLng)
+            found = true
+        }
+    }
+
+    if (!found) return null
+
+    val distanceThreshold = if (wasSnappedLastTime) SNAP_DISTANCE_HYSTERESIS_METERS else SNAP_DISTANCE_METERS
+    if (bestDistance > distanceThreshold) {
+        return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = false)
+    }
+
+    val angleThreshold = if (wasSnappedLastTime) SNAP_ANGLE_HYSTERESIS_DEGREES else SNAP_MAX_ANGLE_DIFF_DEGREES
+    val diff = angleDiff(userBearing, bestSegmentBearing)
+    if (diff > angleThreshold) {
+        return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = false)
+    }
+
+    return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = true)
 }
 
 @Composable
@@ -123,6 +218,7 @@ fun MapScreen(
     val context = LocalContext.current
 
     DisposableEffect(Unit) {
+        TrackingRecorder.start(context)
         val activity = context as? android.app.Activity
         val window = activity?.window
 
@@ -142,6 +238,7 @@ fun MapScreen(
         }
 
         onDispose {
+            TrackingRecorder.stop()
             if (window != null) {
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -176,11 +273,11 @@ fun MapScreen(
     val selectedRadar by viewModel.selectedRadar.collectAsState()
     var isMapReady by remember { mutableStateOf(false) }
     var mapInitialized by remember { mutableStateOf(false) }
-    var trackingAnimator by remember { mutableStateOf<android.animation.ValueAnimator?>(null) }
-    var lastAnimatedLocation by remember { mutableStateOf<android.location.Location?>(null) }
-    var lastAnimatedBearing by remember { mutableStateOf(0f) }
+
+    val animator = remember { ActiveTrackingAnimator() }
+    val renderedPos by animator.renderedPos.collectAsState()
+
     var lastUserGeoJsonUpdateNanos by remember { mutableStateOf(0L) }
-    var lastFixElapsedRealtime by remember { mutableStateOf(0L) }
     val hadSavedCameraOnEnter = remember { viewModel.savedCameraLat != null }
     var didInitialZoom by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var isTransitioningToTracking by remember { mutableStateOf(false) }
@@ -190,6 +287,8 @@ fun MapScreen(
     var gpsWasDisabled by remember { mutableStateOf(false) }
     var isGpsEnabled by remember { mutableStateOf(true) }
     var showGpsLoading by remember { mutableStateOf(false) }
+    var lastSnapWasSuccessful by remember { mutableStateOf(false) }
+    var lastSnapDistanceMeters by remember { mutableStateOf<Double?>(null) }
 
     var currentRouteResult by remember { mutableStateOf<RouteResult?>(null) }
     var selectedDestination by remember { mutableStateOf<LatLng?>(null) }
@@ -211,7 +310,8 @@ fun MapScreen(
     fun pushUserGeoJson(lat: Double, lng: Double, rotation: Float, force: Boolean = false) {
         val style = styleRef ?: return
         val now = System.nanoTime()
-        if (!force && now - lastUserGeoJsonUpdateNanos < MIN_GEOJSON_UPDATE_INTERVAL_NANOS) return
+        val throttled = !force && now - lastUserGeoJsonUpdateNanos < MIN_GEOJSON_UPDATE_INTERVAL_NANOS
+        if (throttled) return
         lastUserGeoJsonUpdateNanos = now
         val iconScale = if (isActiveTracking) 1.8f else 1.4f
         style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(USER_SOURCE_ID)
@@ -219,8 +319,6 @@ fun MapScreen(
     }
 
     LaunchedEffect(Unit) {
-
-
         while (true) {
             val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
                     as android.location.LocationManager
@@ -239,8 +337,6 @@ fun MapScreen(
 
                 viewModel.locationService.stopPassiveTracking()
 
-                trackingAnimator?.cancel()
-                lastAnimatedLocation = null
                 styleRef?.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(USER_SOURCE_ID)
                     ?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
 
@@ -264,6 +360,49 @@ fun MapScreen(
     val backgroundPermissionLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { }
+
+    val gpsSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            showNoGps = false
+            showGpsLoading = true
+            coroutineScope.launch {
+                val lastKnown = viewModel.locationService.getLastKnownLocation()
+                if (lastKnown != null) {
+                    viewModel.locationService.setInitialLocation(lastKnown)
+                }
+                viewModel.locationService.startPassiveTracking()
+            }
+        } else {
+            showNoGps = false
+        }
+    }
+
+    fun requestEnableGps() {
+        val client = LocationServices.getSettingsClient(context)
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000L).build()
+        val settingsRequest = LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest)
+            .setAlwaysShow(true)
+            .build()
+
+        val task = client.checkLocationSettings(settingsRequest)
+
+        task.addOnSuccessListener {
+            showNoGps = false
+        }
+
+        task.addOnFailureListener { exception ->
+            if (exception is ResolvableApiException) {
+                try {
+                    val intentSenderRequest = IntentSenderRequest.Builder(exception.resolution).build()
+                    gpsSettingsLauncher.launch(intentSenderRequest)
+                } catch (sendEx: android.content.IntentSender.SendIntentException) {
+                }
+            }
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -326,7 +465,6 @@ fun MapScreen(
 
     val orientation = LocalConfiguration.current.orientation
     val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE
-
     val density = LocalContext.current.resources.displayMetrics.density
     val screenHeightPx = LocalConfiguration.current.screenHeightDp * density
     val currentMapPadding = (screenHeightPx * 0.65).toDouble()
@@ -336,8 +474,6 @@ fun MapScreen(
         if (!isMapReady) return@LaunchedEffect
         if (!isActiveTracking) return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
-
-        trackingAnimator?.cancel()
 
         val correctedPadding = doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0)
 
@@ -389,15 +525,6 @@ fun MapScreen(
             }
         }
 
-        val drawnRadars = requestRadars.filterIndexed { index, radar ->
-            radar.latitude != null && radar.longitude != null
-        }
-        val stacionarniCount = drawnRadars.count { it.coordinate?.stacionaran == true }
-        val mobilniCount = drawnRadars.size - stacionarniCount
-        android.util.Log.d(
-            "RadarMarkers",
-            "Iscrtano markera: ${radarFeatures.size} (stacionarni=$stacionarniCount, mobilni=$mobilniCount)"
-        )
         val radius = context.getSharedPreferences("sound_settings", android.content.Context.MODE_PRIVATE)
             .getInt("alert_radius", 200).toDouble()
         val zoneFeatureCollection = withContext(Dispatchers.Default) {
@@ -409,12 +536,8 @@ fun MapScreen(
             FeatureCollection.fromFeatures(features)
         }
 
-        if (!isActive) {
-            return@LaunchedEffect
-        }
-        if (requestRadars !== activeRadars) {
-            return@LaunchedEffect
-        }
+        if (!isActive) return@LaunchedEffect
+        if (requestRadars !== activeRadars) return@LaunchedEffect
 
         try {
             style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(RADAR_SOURCE_ID)
@@ -423,9 +546,7 @@ fun MapScreen(
                 ?.setGeoJson(zoneFeatureCollection)
 
             alertService.setActiveRadars(requestRadars)
-
-        } catch (e: Exception) {
-        }
+        } catch (e: Exception) {}
     }
 
     LaunchedEffect(userLocation) {
@@ -444,7 +565,6 @@ fun MapScreen(
     LaunchedEffect(currentRouteResult, styleRef) {
         val style = styleRef ?: return@LaunchedEffect
         val routeSource = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>("route-source") ?: return@LaunchedEffect
-
         val route = currentRouteResult
         if (route == null || route.coordinates.isEmpty()) {
             routeSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
@@ -462,12 +582,37 @@ fun MapScreen(
         updateDestinationScreenPoint()
     }
 
+    LaunchedEffect(isActiveTracking, isGpsEnabled) {
+        if (isActiveTracking && isGpsEnabled) {
+            animator.start()
+        }
+    }
+
+    LaunchedEffect(renderedPos) {
+        val map = mapRef ?: return@LaunchedEffect
+        if (!isMapReady || !isActiveTracking || !didInitialZoom || isTransitioningToTracking) return@LaunchedEffect
+
+        pushUserGeoJson(renderedPos.lat, renderedPos.lng, renderedPos.bearing, force = true)
+
+        val trackingPadding = doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0)
+        map.moveCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder()
+                    .target(LatLng(renderedPos.lat, renderedPos.lng))
+                    .zoom(17.0)
+                    .tilt(45.0)
+                    .bearing(renderedPos.bearing.toDouble())
+                    .padding(trackingPadding)
+                    .build()
+            )
+        )
+    }
+
     LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled, isCameraLocked) {
         val map = mapRef ?: return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
         if (!isMapReady) return@LaunchedEffect
         if (!isGpsEnabled) return@LaunchedEffect
-
 
         val gesturesAllowed = !isActiveTracking && !isCameraLocked
         map.uiSettings.isScrollGesturesEnabled = gesturesAllowed
@@ -475,24 +620,36 @@ fun MapScreen(
         map.uiSettings.isRotateGesturesEnabled = gesturesAllowed
         map.uiSettings.isTiltGesturesEnabled = gesturesAllowed
 
-        val targetRotation = if (isActiveTracking) userHeading.toFloat() else 0f
+        val activeRouteCoords = currentRouteResult?.coordinates
+        val snapResult = if (isActiveTracking && activeRouteCoords != null) {
+            snapToRoute(loc.latitude, loc.longitude, userHeading, activeRouteCoords, lastSnapWasSuccessful)
+        } else {
+            null
+        }
+
+        lastSnapWasSuccessful = snapResult?.isAccepted == true
+        lastSnapDistanceMeters = snapResult?.distanceMeters
+
+        val effectiveLat = if (snapResult?.isAccepted == true) snapResult.lat else loc.latitude
+        val effectiveLng = if (snapResult?.isAccepted == true) snapResult.lng else loc.longitude
+
+        val targetRotation = if (isActiveTracking) {
+            if (snapResult?.isAccepted == true) snapResult.bearing else userHeading.toFloat()
+        } else {
+            0f
+        }
 
         val trackingPadding = if (isActiveTracking) doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0) else doubleArrayOf(0.0, 0.0, 0.0, 0.0)
-        val locChanged = lastAnimatedLocation == null ||
-                loc.latitude != lastAnimatedLocation?.latitude ||
-                loc.longitude != lastAnimatedLocation?.longitude
-        val bearingChanged = targetRotation != lastAnimatedBearing
 
         if (!didInitialZoom) {
             didInitialZoom = true
             locationFound = true
-            lastAnimatedLocation = loc
-            lastAnimatedBearing = targetRotation
-            pushUserGeoJson(loc.latitude, loc.longitude, targetRotation, force = true)
+            animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = true)
+            pushUserGeoJson(effectiveLat, effectiveLng, targetRotation, force = true)
             map.animateCamera(
                 CameraUpdateFactory.newCameraPosition(
                     CameraPosition.Builder()
-                        .target(LatLng(loc.latitude, loc.longitude))
+                        .target(LatLng(effectiveLat, effectiveLng))
                         .zoom(if (isActiveTracking) 17.0 else 14.0)
                         .tilt(if (isActiveTracking) 45.0 else 0.0)
                         .bearing(if (isActiveTracking) userHeading else 0.0)
@@ -500,31 +657,22 @@ fun MapScreen(
                         .build()
                 ), 1000
             )
-        } else if (!locChanged && !bearingChanged) {
         } else if (!isActiveTracking) {
-            lastAnimatedLocation = loc
-            lastAnimatedBearing = targetRotation
-            pushUserGeoJson(loc.latitude, loc.longitude, targetRotation, force = true)
+            animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = true)
+            pushUserGeoJson(effectiveLat, effectiveLng, targetRotation, force = true)
         } else {
-            val previousLoc = lastAnimatedLocation
-            val previousBearing = lastAnimatedBearing
-            val startLatLng = if (previousLoc != null) LatLng(previousLoc.latitude, previousLoc.longitude) else LatLng(loc.latitude, loc.longitude)
+            val startLatLng = LatLng(animator.renderedPos.value.lat, animator.renderedPos.value.lng)
             val targetLatLng = LatLng(loc.latitude, loc.longitude)
             val jumpDistanceMeters = startLatLng.distanceTo(targetLatLng)
 
-            lastAnimatedLocation = loc
-            lastAnimatedBearing = targetRotation
-
-            trackingAnimator?.cancel()
-
-            if (previousLoc == null || jumpDistanceMeters > 300.0 || !isTransitioningToTracking.not()) {
-                lastFixElapsedRealtime = android.os.SystemClock.elapsedRealtime()
-                pushUserGeoJson(loc.latitude, loc.longitude, targetRotation, force = true)
+            if (jumpDistanceMeters > 300.0 || isTransitioningToTracking) {
+                animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = true)
+                pushUserGeoJson(effectiveLat, effectiveLng, targetRotation, force = true)
                 if (!isTransitioningToTracking) {
                     map.moveCamera(
                         CameraUpdateFactory.newCameraPosition(
                             CameraPosition.Builder()
-                                .target(targetLatLng)
+                                .target(LatLng(effectiveLat, effectiveLng))
                                 .zoom(17.0)
                                 .tilt(45.0)
                                 .bearing(targetRotation.toDouble())
@@ -534,41 +682,10 @@ fun MapScreen(
                     )
                 }
             } else {
-                val now = android.os.SystemClock.elapsedRealtime()
-                val measuredElapsed = if (lastFixElapsedRealtime == 0L) TRACKING_ANIM_FALLBACK_DURATION_MS else (now - lastFixElapsedRealtime)
-                lastFixElapsedRealtime = now
-                val animDuration = measuredElapsed.coerceIn(TRACKING_ANIM_MIN_DURATION_MS, TRACKING_ANIM_MAX_DURATION_MS)
-
-                val startZoom = 17.0
-                trackingAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-                    duration = animDuration
-                    interpolator = android.view.animation.DecelerateInterpolator()
-                    addUpdateListener { animator ->
-                        val fraction = animator.animatedValue as Float
-                        val animatedLat = startLatLng.latitude + (targetLatLng.latitude - startLatLng.latitude) * fraction
-                        val animatedLng = startLatLng.longitude + (targetLatLng.longitude - startLatLng.longitude) * fraction
-                        val animatedBearing = shortestAngleLerp(previousBearing, targetRotation, fraction)
-
-                        pushUserGeoJson(animatedLat, animatedLng, animatedBearing)
-
-                        map.moveCamera(
-                            CameraUpdateFactory.newCameraPosition(
-                                CameraPosition.Builder()
-                                    .target(LatLng(animatedLat, animatedLng))
-                                    .zoom(startZoom)
-                                    .tilt(45.0)
-                                    .bearing(animatedBearing.toDouble())
-                                    .padding(trackingPadding)
-                                    .build()
-                            )
-                        )
-                    }
-                    start()
-                }
+                animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = false)
             }
         }
     }
-
 
     var bottomNavSizePx by remember { mutableStateOf(0) }
     val bottomNavSizeDp = with(androidx.compose.ui.platform.LocalDensity.current) { bottomNavSizePx.toDp() }
@@ -826,9 +943,39 @@ fun MapScreen(
                             }
                         )
                     }
+
+                    Button(
+                        onClick = {
+                            val mockRoute = com.amko.roadflow.data.local.MockRouteData.getMockRoute()
+                            currentRouteResult = mockRoute
+
+                            val lastCoord = mockRoute.coordinates.last()
+                            selectedDestination = LatLng(lastCoord.first, lastCoord.second)
+
+                            mapRef?.let { map ->
+                                val boundsBuilder = LatLngBounds.Builder()
+                                mockRoute.coordinates.forEach { (lat, lng) ->
+                                    boundsBuilder.include(LatLng(lat, lng))
+                                }
+                                map.animateCamera(
+                                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120)
+                                )
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = androidx.compose.ui.graphics.Color(0xFF004E5A)
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "TEST RUTA",
+                            color = androidx.compose.ui.graphics.Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
-
             if ((currentRouteResult != null || isCalculatingRoute) && !isSearchExpanded) {
                 Box(
                     modifier = Modifier
@@ -982,6 +1129,19 @@ fun MapScreen(
                             end = 20.dp
                         )
                 )
+
+                if (hasActiveRoute) {
+                    RoutingRecognitionOverlay(
+                        isSnapped = lastSnapWasSuccessful,
+                        distanceToRouteMeters = lastSnapDistanceMeters,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(
+                                top = if (isLandscape) 20.dp else 130.dp,
+                                start = if (isLandscape) 20.dp else 16.dp
+                            )
+                    )
+                }
             }
 
             if (isLandscape) {
@@ -1021,7 +1181,6 @@ fun MapScreen(
 
                                     val map = mapRef ?: return@launch
                                     if (isActiveTracking) {
-                                        trackingAnimator?.cancel()
                                         isCameraLocked = true
                                         viewModel.locationService.stopActiveTracking()
                                         viewModel.stopBackgroundTracking()
@@ -1192,7 +1351,6 @@ fun MapScreen(
 
                                     val map = mapRef ?: return@launch
                                     if (isActiveTracking) {
-                                        trackingAnimator?.cancel()
                                         isCameraLocked = true
                                         viewModel.locationService.stopActiveTracking()
                                         viewModel.stopBackgroundTracking()
@@ -1217,7 +1375,7 @@ fun MapScreen(
                                     } else {
                                         val uLoc = userLocation
                                         val dest = selectedDestination
-                                        if (dest != null && uLoc != null) {
+                                        if (dest != null && uLoc != null && currentRouteResult == null) {
                                             isCalculatingRoute = true
                                             val result = routingService.getRoute(
                                                 uLoc.latitude,
@@ -1239,7 +1397,6 @@ fun MapScreen(
                                                 )
                                             }
                                         }
-
                                         viewModel.locationService.stopPassiveTracking()
                                         viewModel.locationService.startActiveTracking()
                                         viewModel.startBackgroundTracking()
@@ -1387,7 +1544,7 @@ fun MapScreen(
                 NoConnectionDialog(
                     title = "GPS je isključen",
                     message = "Molimo uključite lokaciju kako bi aplikacija mogla raditi.",
-                    onDismiss = { showNoGps = false }
+                    onDismiss = { requestEnableGps() }
                 )
             }
 

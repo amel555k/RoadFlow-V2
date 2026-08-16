@@ -47,7 +47,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val canPullToRefresh = MutableStateFlow(true)
 
-    val notificationEnabled = MutableStateFlow(prefs.getBoolean("notification_enabled", false))
+    val notificationEnabled = MutableStateFlow(prefs.getBoolean("notification_enabled", true))
 
     fun setNotificationEnabled(enabled: Boolean) {
         notificationEnabled.value = enabled

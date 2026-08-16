@@ -82,7 +82,11 @@ fun MainScreen(
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { }
+    ) { isGranted ->
+        if (isGranted && viewModel.notificationEnabled.value) {
+            viewModel.setNotificationEnabled(true)
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -93,10 +97,13 @@ fun MainScreen(
 
             if (!granted) {
                 notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else if (viewModel.notificationEnabled.value) {
+                viewModel.setNotificationEnabled(true)
             }
+        } else if (viewModel.notificationEnabled.value) {
+            viewModel.setNotificationEnabled(true)
         }
     }
-
     DisposableEffect(context) {
         val connectivityManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
