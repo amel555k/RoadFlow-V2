@@ -17,15 +17,15 @@ class RoutingService {
     private val client = OkHttpClient()
     private val baseUrl = Secrets.OSRM_URL
 
-    suspend fun getRoute(startLat: Double, startLng: Double, endLat: Double, endLng: Double): RouteResult? {
+    suspend fun getRoutes(startLat: Double, startLng: Double, endLat: Double, endLng: Double): List<RouteResult> {
         return withContext(Dispatchers.IO) {
             try {
-                val url = "$baseUrl/$startLng,$startLat;$endLng,$endLat?geometries=geojson&overview=full"
+                val url = "$baseUrl/$startLng,$startLat;$endLng,$endLat?geometries=geojson&overview=full&alternatives=3"
                 val request = Request.Builder().url(url).build()
 
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@withContext null
-                    val body = response.body?.string() ?: return@withContext null
+                    if (!response.isSuccessful) return@withContext emptyList()
+                    val body = response.body?.string() ?: return@withContext emptyList()
 
                     Log.d("OSRM_DEBUG", "----------------- RAW OSRM JSON START -----------------")
                     Log.d("OSRM_DEBUG", body)
@@ -33,31 +33,41 @@ class RoutingService {
 
                     val json = JSONObject(body)
                     val routes = json.optJSONArray("routes")
-                    if (routes == null || routes.length() == 0) return@withContext null
+                    if (routes == null || routes.length() == 0) return@withContext emptyList()
 
-                    val route = routes.getJSONObject(0)
-                    val distance = route.optDouble("distance", 0.0)
-                    val duration = route.optDouble("duration", 0.0)
+                    val results = mutableListOf<RouteResult>()
 
-                    val geometry = route.getJSONObject("geometry")
-                    val coordsArray = geometry.getJSONArray("coordinates")
+                    for (r in 0 until routes.length()) {
+                        val route = routes.getJSONObject(r)
+                        val distance = route.optDouble("distance", 0.0)
+                        val duration = route.optDouble("duration", 0.0)
 
-                    val coordinates = mutableListOf<Pair<Double, Double>>()
-                    for (i in 0 until coordsArray.length()) {
-                        val coord = coordsArray.getJSONArray(i)
-                        val lon = coord.getDouble(0)
-                        val lat = coord.getDouble(1)
-                        coordinates.add(Pair(lat, lon))
+                        val geometry = route.getJSONObject("geometry")
+                        val coordsArray = geometry.getJSONArray("coordinates")
+
+                        val coordinates = mutableListOf<Pair<Double, Double>>()
+                        for (i in 0 until coordsArray.length()) {
+                            val coord = coordsArray.getJSONArray(i)
+                            val lon = coord.getDouble(0)
+                            val lat = coord.getDouble(1)
+                            coordinates.add(Pair(lat, lon))
+                        }
+
+                        Log.d("OSRM_DEBUG", "Ruta $r -> Distanca: $distance m, Trajanje: $duration s, Ukupno koordinata: ${coordinates.size}")
+
+                        results.add(RouteResult(distance, duration, coordinates))
                     }
 
-                    Log.d("OSRM_DEBUG", "Distanca: $distance m, Trajanje: $duration s, Ukupno koordinata: ${coordinates.size}")
-
-                    RouteResult(distance, duration, coordinates)
+                    results
                 }
             } catch (e: Exception) {
                 Log.e("OSRM_DEBUG", "Greska pri dohvacanju rute", e)
-                null
+                emptyList()
             }
         }
+    }
+
+    suspend fun getRoute(startLat: Double, startLng: Double, endLat: Double, endLng: Double): RouteResult? {
+        return getRoutes(startLat, startLng, endLat, endLng).firstOrNull()
     }
 }

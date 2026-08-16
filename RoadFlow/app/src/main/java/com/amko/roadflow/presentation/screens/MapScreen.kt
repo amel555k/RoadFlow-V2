@@ -80,6 +80,13 @@ private const val USER_SOURCE_ID = "user-marker-source"
 private const val USER_LAYER_ID = "user-marker-layer"
 private const val DESTINATION_SOURCE_ID = "destination-marker-source"
 private const val DESTINATION_LAYER_ID = "destination-marker-layer"
+private const val ROUTE_ALT_SOURCE_ID = "route-alt-source"
+private const val ROUTE_ALT_LAYER_ID = "route-alt-layer"
+private const val ROUTE_ALT_HITAREA_LAYER_ID = "route-alt-hitarea-layer"
+private const val ROUTE_LABEL_SOURCE_ID = "route-label-source"
+private const val ROUTE_LABEL_LAYER_ID = "route-label-layer"
+private const val ROUTE_ALT_LABEL_SOURCE_ID = "route-alt-label-source"
+private const val ROUTE_ALT_LABEL_LAYER_ID = "route-alt-label-layer"
 
 private const val MIN_GEOJSON_UPDATE_INTERVAL_NANOS = 16_000_000L
 private const val SNAP_DISTANCE_METERS = 20.0
@@ -106,6 +113,49 @@ private fun createDestinationBitmap(context: android.content.Context): android.g
     return bitmap
 }
 
+private fun createRouteLabelBitmap(
+    context: android.content.Context,
+    line1: String,
+    line2: String,
+    backgroundColor: String = "#0D47A1",
+    textColor: Int = android.graphics.Color.WHITE
+): android.graphics.Bitmap {
+    val density = context.resources.displayMetrics.density
+    val textPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    textPaint.color = textColor
+    textPaint.textSize = 20f * density
+    textPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+    textPaint.textAlign = android.graphics.Paint.Align.CENTER
+
+    val paddingH = 16f * density
+    val paddingV = 10f * density
+    val lineSpacing = 4f * density
+
+    val width1 = textPaint.measureText(line1)
+    val width2 = textPaint.measureText(line2)
+    val textWidth = maxOf(width1, width2)
+    val fontMetrics = textPaint.fontMetrics
+    val lineHeight = fontMetrics.descent - fontMetrics.ascent
+
+    val boxWidth = (textWidth + paddingH * 2).toInt()
+    val boxHeight = (lineHeight * 2 + lineSpacing + paddingV * 2).toInt()
+
+    val bitmap = android.graphics.Bitmap.createBitmap(boxWidth, boxHeight, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+
+    val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    bgPaint.color = android.graphics.Color.parseColor(backgroundColor)
+    val rect = android.graphics.RectF(0f, 0f, boxWidth.toFloat(), boxHeight.toFloat())
+    canvas.drawRoundRect(rect, 10f * density, 10f * density, bgPaint)
+
+    val centerX = boxWidth / 2f
+    val firstBaseline = paddingV - fontMetrics.ascent
+    canvas.drawText(line1, centerX, firstBaseline, textPaint)
+    canvas.drawText(line2, centerX, firstBaseline + lineHeight + lineSpacing, textPaint)
+
+    return bitmap
+}
+
 private fun userFeature(lat: Double, lng: Double, rotation: Float, iconScale: Float): FeatureCollection {
     val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat))
     feature.addNumberProperty("rotation", rotation)
@@ -116,6 +166,131 @@ private fun userFeature(lat: Double, lng: Double, rotation: Float, iconScale: Fl
 private fun destinationFeature(latLng: LatLng?): FeatureCollection {
     if (latLng == null) return FeatureCollection.fromFeatures(emptyList())
     return FeatureCollection.fromFeature(Feature.fromGeometry(Point.fromLngLat(latLng.longitude, latLng.latitude)))
+}
+
+private fun pointAtFraction(coordinates: List<Pair<Double, Double>>, fraction: Double): Pair<Double, Double>? {
+    if (coordinates.isEmpty()) return null
+    if (coordinates.size == 1) return coordinates[0]
+
+    val clampedFraction = fraction.coerceIn(0.0, 1.0)
+
+    val mPerLat = 111320.0
+    fun mPerLng(atLat: Double) = 111320.0 * Math.cos(Math.toRadians(atLat))
+
+    var totalLength = 0.0
+    val segmentLengths = mutableListOf<Double>()
+    for (i in 0 until coordinates.size - 1) {
+        val (aLat, aLng) = coordinates[i]
+        val (bLat, bLng) = coordinates[i + 1]
+        val dx = (bLng - aLng) * mPerLng(aLat)
+        val dy = (bLat - aLat) * mPerLat
+        val len = Math.sqrt(dx * dx + dy * dy)
+        segmentLengths.add(len)
+        totalLength += len
+    }
+
+    if (totalLength <= 0.0) return coordinates[coordinates.size / 2]
+
+    val targetLength = totalLength * clampedFraction
+    var accumulated = 0.0
+    for (i in segmentLengths.indices) {
+        val segLen = segmentLengths[i]
+        if (accumulated + segLen >= targetLength) {
+            val (aLat, aLng) = coordinates[i]
+            val (bLat, bLng) = coordinates[i + 1]
+            val t = if (segLen > 0.0) (targetLength - accumulated) / segLen else 0.0
+            val lat = aLat + (bLat - aLat) * t
+            val lng = aLng + (bLng - aLng) * t
+            return Pair(lat, lng)
+        }
+        accumulated += segLen
+    }
+
+    return coordinates.last()
+}
+
+private fun midPointOfRoute(coordinates: List<Pair<Double, Double>>): Pair<Double, Double>? {
+    return pointAtFraction(coordinates, 0.5)
+}
+
+private data class LabelPlacement(val routeIndex: Int, val isSelected: Boolean, val fraction: Double)
+
+private fun resolveLabelFractions(
+    map: MapLibreMap,
+    selectedIndex: Int,
+    routes: List<RouteResult>,
+    labelWidthPx: Float,
+    labelHeightPx: Float,
+    previousFractions: Map<Int, Double>
+): Map<Int, Double> {
+    val movableIndices = routes.indices.filter { it != selectedIndex && routes[it].coordinates.isNotEmpty() }
+    val fractions = mutableMapOf<Int, Double>()
+
+    if (routes.getOrNull(selectedIndex)?.coordinates?.isNotEmpty() == true) {
+        fractions[selectedIndex] = 0.5
+    }
+    movableIndices.forEach { index ->
+        fractions[index] = previousFractions[index] ?: 0.5
+    }
+
+    fun screenPointFor(index: Int, fraction: Double): PointF? {
+        val route = routes.getOrNull(index) ?: return null
+        val point = pointAtFraction(route.coordinates, fraction) ?: return null
+        return map.projection.toScreenLocation(LatLng(point.first, point.second))
+    }
+
+    val minGapX = labelWidthPx * 0.9f
+    val minGapY = labelHeightPx * 0.9f
+    val stepSize = 0.02
+    val iterations = 40
+
+    repeat(iterations) {
+        val allIndices = (movableIndices + listOfNotNull(fractions.keys.find { it == selectedIndex }))
+        val screenPoints = allIndices.associateWith { idx -> screenPointFor(idx, fractions[idx] ?: 0.5) }
+
+        val adjustments = mutableMapOf<Int, Double>()
+
+        for (a in allIndices) {
+            val pointA = screenPoints[a] ?: continue
+            for (b in allIndices) {
+                if (a == b) continue
+                val pointB = screenPoints[b] ?: continue
+
+                val dx = Math.abs(pointA.x - pointB.x)
+                val dy = Math.abs(pointA.y - pointB.y)
+                val overlapping = dx < minGapX && dy < minGapY
+                if (!overlapping) continue
+
+                if (a == selectedIndex) continue
+
+                val routeA = routes[a]
+                val currentFractionA = fractions[a] ?: 0.5
+                val forwardPoint = screenPointFor(a, (currentFractionA + stepSize).coerceIn(0.0, 1.0))
+                val backwardPoint = screenPointFor(a, (currentFractionA - stepSize).coerceIn(0.0, 1.0))
+
+                val forwardDist = forwardPoint?.let { distanceBetween(it, pointB) } ?: -1f
+                val backwardDist = backwardPoint?.let { distanceBetween(it, pointB) } ?: -1f
+
+                val moveForward = forwardDist >= backwardDist
+                val delta = if (moveForward) stepSize else -stepSize
+                adjustments[a] = (adjustments[a] ?: 0.0) + delta
+            }
+        }
+
+        if (adjustments.isEmpty()) return@repeat
+
+        adjustments.forEach { (index, delta) ->
+            val current = fractions[index] ?: 0.5
+            fractions[index] = (current + delta).coerceIn(0.05, 0.95)
+        }
+    }
+
+    return fractions
+}
+private fun distanceBetween(a: PointF, b: PointF): Float {
+    val dx = a.x - b.x
+    val dy = a.y - b.y
+    return Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
 }
 
 private data class SnapResult(val lat: Double, val lng: Double, val bearing: Float, val distanceMeters: Double, val isAccepted: Boolean)
@@ -290,7 +465,11 @@ fun MapScreen(
     var lastSnapWasSuccessful by remember { mutableStateOf(false) }
     var lastSnapDistanceMeters by remember { mutableStateOf<Double?>(null) }
 
-    var currentRouteResult by remember { mutableStateOf<RouteResult?>(null) }
+    var routeAlternatives by remember { mutableStateOf<List<RouteResult>>(emptyList()) }
+    var selectedRouteIndex by remember { mutableStateOf(0) }
+    val currentRouteResult: RouteResult? = routeAlternatives.getOrNull(selectedRouteIndex)
+    var labelFractions by remember { mutableStateOf<Map<Int, Double>>(emptyMap()) }
+
     var selectedDestination by remember { mutableStateOf<LatLng?>(null) }
     var destinationScreenPoint by remember { mutableStateOf<PointF?>(null) }
     var isCalculatingRoute by remember { mutableStateOf(false) }
@@ -307,6 +486,37 @@ fun MapScreen(
         }
     }
 
+    fun clearRoute() {
+        routeAlternatives = emptyList()
+        selectedRouteIndex = 0
+        selectedDestination = null
+    }
+
+    suspend fun computeRoutesTo(destination: LatLng) {
+        val uLoc = userLocation ?: return
+        isCalculatingRoute = true
+        val results = routingService.getRoutes(
+            uLoc.latitude,
+            uLoc.longitude,
+            destination.latitude,
+            destination.longitude
+        )
+        routeAlternatives = results
+        selectedRouteIndex = 0
+        isCalculatingRoute = false
+
+        if (results.isNotEmpty()) {
+            val boundsBuilder = LatLngBounds.Builder()
+            boundsBuilder.include(LatLng(uLoc.latitude, uLoc.longitude))
+            results.forEach { r ->
+                r.coordinates.forEach { (lat, lng) -> boundsBuilder.include(LatLng(lat, lng)) }
+            }
+            mapRef?.animateCamera(
+                CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 150)
+            )
+        }
+    }
+
     fun pushUserGeoJson(lat: Double, lng: Double, rotation: Float, force: Boolean = false) {
         val style = styleRef ?: return
         val now = System.nanoTime()
@@ -316,6 +526,25 @@ fun MapScreen(
         val iconScale = if (isActiveTracking) 1.8f else 1.4f
         style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(USER_SOURCE_ID)
             ?.setGeoJson(userFeature(lat, lng, rotation, iconScale))
+    }
+
+    fun recomputeLabelFractions() {
+        val map = mapRef ?: return
+        if (routeAlternatives.isEmpty()) {
+            labelFractions = emptyMap()
+            return
+        }
+        val densityLocal = context.resources.displayMetrics.density
+        val approxLabelWidthPx = 110f * densityLocal
+        val approxLabelHeightPx = 50f * densityLocal
+        labelFractions = resolveLabelFractions(
+            map,
+            selectedRouteIndex,
+            routeAlternatives,
+            approxLabelWidthPx,
+            approxLabelHeightPx,
+            labelFractions
+        )
     }
 
     LaunchedEffect(Unit) {
@@ -562,19 +791,108 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(currentRouteResult, styleRef) {
-        val style = styleRef ?: return@LaunchedEffect
-        val routeSource = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>("route-source") ?: return@LaunchedEffect
-        val route = currentRouteResult
-        if (route == null || route.coordinates.isEmpty()) {
-            routeSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
-        } else {
-            val points = route.coordinates.map { Point.fromLngLat(it.second, it.first) }
-            val lineString = LineString.fromLngLats(points)
-            routeSource.setGeoJson(FeatureCollection.fromFeature(Feature.fromGeometry(lineString)))
-        }
+    LaunchedEffect(routeAlternatives, selectedRouteIndex) {
+        recomputeLabelFractions()
     }
 
+    LaunchedEffect(routeAlternatives, selectedRouteIndex, styleRef, isActiveTracking, labelFractions) {
+        val style = styleRef ?: return@LaunchedEffect
+        val altSource = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(ROUTE_ALT_SOURCE_ID)
+        val mainSource = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>("route-source")
+        val labelSource = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(ROUTE_LABEL_SOURCE_ID)
+        val altLabelSource = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(ROUTE_ALT_LABEL_SOURCE_ID)
+
+        if (routeAlternatives.isEmpty()) {
+            altSource?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+            mainSource?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+            labelSource?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+            altLabelSource?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+            return@LaunchedEffect
+        }
+
+        val altFeatures = mutableListOf<Feature>()
+        val altLabelFeatures = mutableListOf<Feature>()
+        var selectedFeature: Feature? = null
+        var labelFeature: Feature? = null
+
+        fun formatDurationAndDistance(route: RouteResult): Pair<String, String> {
+            val totalMinutes = (route.durationSeconds / 60).toInt()
+            val hours = totalMinutes / 60
+            val remainingMinutes = totalMinutes % 60
+            val timeFormatted = when {
+                hours > 0 && remainingMinutes > 0 -> "${hours}h ${remainingMinutes}m"
+                hours > 0 -> "${hours}h"
+                else -> "${totalMinutes} min"
+            }
+            val km = String.format("%.1f km", route.distanceMeters / 1000.0)
+            return Pair(timeFormatted, km)
+        }
+
+        routeAlternatives.forEachIndexed { index, route ->
+            if (route.coordinates.isEmpty()) return@forEachIndexed
+            val points = route.coordinates.map { Point.fromLngLat(it.second, it.first) }
+            val lineString = LineString.fromLngLats(points)
+            val feature = Feature.fromGeometry(lineString)
+            feature.addBooleanProperty("isSelected", index == selectedRouteIndex)
+            feature.addNumberProperty("routeIndex", index)
+
+            val fraction = labelFractions[index] ?: 0.5
+            val mid = pointAtFraction(route.coordinates, fraction)
+
+            if (index == selectedRouteIndex) {
+                selectedFeature = feature
+
+                if (mid != null) {
+                    val (timeFormatted, km) = formatDurationAndDistance(route)
+                    val iconId = "route-label-icon-$index"
+                    style.addImage(iconId, createRouteLabelBitmap(context, timeFormatted, km))
+
+                    val labelPoint = Feature.fromGeometry(Point.fromLngLat(mid.second, mid.first))
+                    labelPoint.addStringProperty("iconId", iconId)
+                    labelFeature = labelPoint
+                }
+            } else {
+                altFeatures.add(feature)
+
+                if (mid != null) {
+                    val (timeFormatted, km) = formatDurationAndDistance(route)
+                    val iconId = "route-alt-label-icon-$index"
+                    style.addImage(
+                        iconId,
+                        createRouteLabelBitmap(
+                            context,
+                            timeFormatted,
+                            km,
+                            backgroundColor = "#78909C",
+                            textColor = android.graphics.Color.parseColor("#F5F5F5")
+                        )
+                    )
+
+                    val altLabelPoint = Feature.fromGeometry(Point.fromLngLat(mid.second, mid.first))
+                    altLabelPoint.addStringProperty("iconId", iconId)
+                    altLabelPoint.addNumberProperty("routeIndex", index)
+                    altLabelFeatures.add(altLabelPoint)
+                }
+            }
+        }
+
+        altSource?.setGeoJson(
+            if (isActiveTracking) FeatureCollection.fromFeatures(emptyList())
+            else FeatureCollection.fromFeatures(altFeatures)
+        )
+        mainSource?.setGeoJson(
+            if (selectedFeature != null) FeatureCollection.fromFeature(selectedFeature!!)
+            else FeatureCollection.fromFeatures(emptyList())
+        )
+        labelSource?.setGeoJson(
+            if (labelFeature != null) FeatureCollection.fromFeature(labelFeature!!)
+            else FeatureCollection.fromFeatures(emptyList())
+        )
+        altLabelSource?.setGeoJson(
+            if (isActiveTracking) FeatureCollection.fromFeatures(emptyList())
+            else FeatureCollection.fromFeatures(altLabelFeatures)
+        )
+    }
     LaunchedEffect(selectedDestination, styleRef, isMapReady) {
         val style = styleRef ?: return@LaunchedEffect
         style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(DESTINATION_SOURCE_ID)
@@ -734,6 +1052,7 @@ fun MapScreen(
                                 tilt = pos.tilt,
                                 bearing = pos.bearing
                             )
+                            recomputeLabelFractions()
                         }
 
                         map.setStyle(MAP_API_KEY) { style ->
@@ -771,6 +1090,79 @@ fun MapScreen(
 
                             style.addSource(
                                 org.maplibre.android.style.sources.GeoJsonSource(
+                                    RADAR_SOURCE_ID,
+                                    FeatureCollection.fromFeatures(emptyList())
+                                )
+                            )
+
+                            style.addLayer(
+                                org.maplibre.android.style.layers.SymbolLayer(RADAR_LAYER_ID, RADAR_SOURCE_ID).apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.iconImage(
+                                            org.maplibre.android.style.expressions.Expression.get("iconId")
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(1.0f),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap(true),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true)
+                                    )
+                                }
+                            )
+
+                            style.addSource(
+                                org.maplibre.android.style.sources.GeoJsonSource(
+                                    ROUTE_ALT_SOURCE_ID,
+                                    FeatureCollection.fromFeatures(emptyList())
+                                )
+                            )
+                            style.addLayer(
+                                org.maplibre.android.style.layers.LineLayer(ROUTE_ALT_LAYER_ID, ROUTE_ALT_SOURCE_ID).apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#9FC5CC")),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineWidth(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(6, 3f),
+                                                org.maplibre.android.style.expressions.Expression.stop(14, 5f),
+                                                org.maplibre.android.style.expressions.Expression.stop(18, 9f)
+                                            )
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineCap(
+                                            org.maplibre.android.style.layers.Property.LINE_CAP_ROUND
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineJoin(
+                                            org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND
+                                        )
+                                    )
+                                }
+                            )
+
+                            style.addLayer(
+                                org.maplibre.android.style.layers.LineLayer(ROUTE_ALT_HITAREA_LAYER_ID, ROUTE_ALT_SOURCE_ID).apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#000000")),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineOpacity(0.001f),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineWidth(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(6, 24f),
+                                                org.maplibre.android.style.expressions.Expression.stop(14, 32f),
+                                                org.maplibre.android.style.expressions.Expression.stop(18, 44f)
+                                            )
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineCap(
+                                            org.maplibre.android.style.layers.Property.LINE_CAP_ROUND
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineJoin(
+                                            org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND
+                                        )
+                                    )
+                                }
+                            )
+
+                            style.addSource(
+                                org.maplibre.android.style.sources.GeoJsonSource(
                                     "route-source",
                                     FeatureCollection.fromFeatures(emptyList())
                                 )
@@ -779,7 +1171,7 @@ fun MapScreen(
                             style.addLayer(
                                 org.maplibre.android.style.layers.LineLayer("route-layer", "route-source").apply {
                                     setProperties(
-                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#1E88E5")),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#0D47A1")),
                                         org.maplibre.android.style.layers.PropertyFactory.lineWidth(
                                             org.maplibre.android.style.expressions.Expression.interpolate(
                                                 org.maplibre.android.style.expressions.Expression.linear(),
@@ -801,20 +1193,108 @@ fun MapScreen(
 
                             style.addSource(
                                 org.maplibre.android.style.sources.GeoJsonSource(
-                                    RADAR_SOURCE_ID,
+                                    ROUTE_LABEL_SOURCE_ID,
                                     FeatureCollection.fromFeatures(emptyList())
                                 )
                             )
 
                             style.addLayer(
-                                org.maplibre.android.style.layers.SymbolLayer(RADAR_LAYER_ID, RADAR_SOURCE_ID).apply {
+                                org.maplibre.android.style.layers.SymbolLayer(ROUTE_LABEL_LAYER_ID, ROUTE_LABEL_SOURCE_ID).apply {
                                     setProperties(
                                         org.maplibre.android.style.layers.PropertyFactory.iconImage(
                                             org.maplibre.android.style.expressions.Expression.get("iconId")
                                         ),
-                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(1.0f),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(6, 0.5f),
+                                                org.maplibre.android.style.expressions.Expression.stop(10, 0.65f),
+                                                org.maplibre.android.style.expressions.Expression.stop(14, 0.8f),
+                                                org.maplibre.android.style.expressions.Expression.stop(18, 1.0f)
+                                            )
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconOffset(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(
+                                                    6,
+                                                    org.maplibre.android.style.expressions.Expression.literal(arrayOf(0f, -10f))
+                                                ),
+                                                org.maplibre.android.style.expressions.Expression.stop(
+                                                    10,
+                                                    org.maplibre.android.style.expressions.Expression.literal(arrayOf(0f, -13f))
+                                                ),
+                                                org.maplibre.android.style.expressions.Expression.stop(
+                                                    14,
+                                                    org.maplibre.android.style.expressions.Expression.literal(arrayOf(0f, -16f))
+                                                ),
+                                                org.maplibre.android.style.expressions.Expression.stop(
+                                                    18,
+                                                    org.maplibre.android.style.expressions.Expression.literal(arrayOf(0f, -18f))
+                                                )
+                                            )
+                                        ),
                                         org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap(true),
-                                        org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true)
+                                        org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconAnchor(
+                                            org.maplibre.android.style.layers.Property.ICON_ANCHOR_BOTTOM
+                                        )
+                                    )
+                                }
+                            )
+
+                            style.addSource(
+                                org.maplibre.android.style.sources.GeoJsonSource(
+                                    ROUTE_ALT_LABEL_SOURCE_ID,
+                                    FeatureCollection.fromFeatures(emptyList())
+                                )
+                            )
+
+                            style.addLayer(
+                                org.maplibre.android.style.layers.SymbolLayer(ROUTE_ALT_LABEL_LAYER_ID, ROUTE_ALT_LABEL_SOURCE_ID).apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.iconImage(
+                                            org.maplibre.android.style.expressions.Expression.get("iconId")
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconSize(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(6, 0.5f),
+                                                org.maplibre.android.style.expressions.Expression.stop(10, 0.65f),
+                                                org.maplibre.android.style.expressions.Expression.stop(14, 0.8f),
+                                                org.maplibre.android.style.expressions.Expression.stop(18, 1.0f)
+                                            )
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconOffset(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(
+                                                    6,
+                                                    org.maplibre.android.style.expressions.Expression.literal(arrayOf(0f, -10f))
+                                                ),
+                                                org.maplibre.android.style.expressions.Expression.stop(
+                                                    10,
+                                                    org.maplibre.android.style.expressions.Expression.literal(arrayOf(0f, -13f))
+                                                ),
+                                                org.maplibre.android.style.expressions.Expression.stop(
+                                                    14,
+                                                    org.maplibre.android.style.expressions.Expression.literal(arrayOf(0f, -16f))
+                                                ),
+                                                org.maplibre.android.style.expressions.Expression.stop(
+                                                    18,
+                                                    org.maplibre.android.style.expressions.Expression.literal(arrayOf(0f, -18f))
+                                                )
+                                            )
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap(true),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true),
+                                        org.maplibre.android.style.layers.PropertyFactory.iconAnchor(
+                                            org.maplibre.android.style.layers.Property.ICON_ANCHOR_BOTTOM
+                                        )
                                     )
                                 }
                             )
@@ -862,9 +1342,27 @@ fun MapScreen(
                                     )
                                 }
                             )
-
                             map.addOnMapClickListener { point ->
                                 val screenPoint = map.projection.toScreenLocation(point)
+
+                                val altLabelFeatures = map.queryRenderedFeatures(screenPoint, ROUTE_ALT_LABEL_LAYER_ID)
+                                if (altLabelFeatures.isNotEmpty()) {
+                                    val labelIdx = altLabelFeatures[0].getProperty("routeIndex")?.asInt
+                                    if (labelIdx != null) {
+                                        selectedRouteIndex = labelIdx
+                                        return@addOnMapClickListener true
+                                    }
+                                }
+
+                                val altFeatures = map.queryRenderedFeatures(screenPoint, ROUTE_ALT_HITAREA_LAYER_ID)
+                                if (altFeatures.isNotEmpty()) {
+                                    val idx = altFeatures[0].getProperty("routeIndex")?.asInt
+                                    if (idx != null) {
+                                        selectedRouteIndex = idx
+                                        return@addOnMapClickListener true
+                                    }
+                                }
+
                                 val features = map.queryRenderedFeatures(screenPoint, RADAR_LAYER_ID)
                                 if (features.isNotEmpty()) {
                                     val index = features[0].getProperty("index")?.asInt
@@ -911,7 +1409,7 @@ fun MapScreen(
                 }
             )
 
-            Row(
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(
@@ -920,34 +1418,28 @@ fun MapScreen(
                         end = if (isActiveTracking) 90.dp else 16.dp
                     )
                     .fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (!isActiveTracking && !isCalculatingRoute) {
-                    Box(modifier = Modifier.weight(1f, fill = false)) {
-                        LocationSearchBar(
-                            onExpandedChange = { expanded ->
-                                isSearchExpanded = expanded
-                            },
-                            onLocationSelected = { latLng, _ ->
-                                selectedDestination = latLng
-                                currentRouteResult = null
-                                mapRef?.animateCamera(
-                                    CameraUpdateFactory.newCameraPosition(
-                                        CameraPosition.Builder()
-                                            .target(latLng)
-                                            .zoom(15.0)
-                                            .build()
-                                    ), 1000
-                                )
+                    LocationSearchBar(
+                        onExpandedChange = { expanded ->
+                            isSearchExpanded = expanded
+                        },
+                        onLocationSelected = { latLng, _ ->
+                            selectedDestination = latLng
+                            routeAlternatives = emptyList()
+                            selectedRouteIndex = 0
+                            coroutineScope.launch {
+                                computeRoutesTo(latLng)
                             }
-                        )
-                    }
+                        }
+                    )
 
                     Button(
                         onClick = {
                             val mockRoute = com.amko.roadflow.data.local.MockRouteData.getMockRoute()
-                            currentRouteResult = mockRoute
+                            routeAlternatives = listOf(mockRoute)
+                            selectedRouteIndex = 0
 
                             val lastCoord = mockRoute.coordinates.last()
                             selectedDestination = LatLng(lastCoord.first, lastCoord.second)
@@ -976,7 +1468,7 @@ fun MapScreen(
                     }
                 }
             }
-            if ((currentRouteResult != null || isCalculatingRoute) && !isSearchExpanded) {
+            if (isActiveTracking && (currentRouteResult != null || isCalculatingRoute) && !isSearchExpanded) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -1019,7 +1511,7 @@ fun MapScreen(
                                     )
                                 }
                             } else if (currentRouteResult != null) {
-                                val route = currentRouteResult!!
+                                val route = currentRouteResult
                                 val totalMinutes = (route.durationSeconds / 60).toInt()
                                 val hours = totalMinutes / 60
                                 val remainingMinutes = totalMinutes % 60
@@ -1062,10 +1554,7 @@ fun MapScreen(
                                 )
 
                                 IconButton(
-                                    onClick = {
-                                        selectedDestination = null
-                                        currentRouteResult = null
-                                    },
+                                    onClick = { clearRoute() },
                                     modifier = Modifier.size(if (isLandscape) 32.dp else 28.dp)
                                 ) {
                                     Icon(
@@ -1089,11 +1578,7 @@ fun MapScreen(
 
                     Box(modifier = Modifier.offset(x = xDp, y = yDp)) {
                         Surface(
-                            onClick = {
-                                selectedDestination = null
-                                currentRouteResult = null
-                                destinationScreenPoint = null
-                            },
+                            onClick = { clearRoute() },
                             shape = CircleShape,
                             color = androidx.compose.ui.graphics.Color.White,
                             shadowElevation = 6.dp,
@@ -1203,31 +1688,6 @@ fun MapScreen(
                                         isCameraLocked = false
                                         viewModel.locationService.startPassiveTracking()
                                     } else {
-                                        val uLoc = userLocation
-                                        val dest = selectedDestination
-                                        if (dest != null && uLoc != null) {
-                                            isCalculatingRoute = true
-                                            val result = routingService.getRoute(
-                                                uLoc.latitude,
-                                                uLoc.longitude,
-                                                dest.latitude,
-                                                dest.longitude
-                                            )
-                                            currentRouteResult = result
-                                            isCalculatingRoute = false
-
-                                            if (result != null && result.coordinates.isNotEmpty()) {
-                                                val boundsBuilder = LatLngBounds.Builder()
-                                                boundsBuilder.include(LatLng(uLoc.latitude, uLoc.longitude))
-                                                result.coordinates.forEach { (lat, lng) ->
-                                                    boundsBuilder.include(LatLng(lat, lng))
-                                                }
-                                                mapRef?.animateCamera(
-                                                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120)
-                                                )
-                                            }
-                                        }
-
                                         viewModel.locationService.stopPassiveTracking()
                                         viewModel.locationService.startActiveTracking()
                                         viewModel.startBackgroundTracking()
@@ -1373,30 +1833,6 @@ fun MapScreen(
                                         isCameraLocked = false
                                         viewModel.locationService.startPassiveTracking()
                                     } else {
-                                        val uLoc = userLocation
-                                        val dest = selectedDestination
-                                        if (dest != null && uLoc != null && currentRouteResult == null) {
-                                            isCalculatingRoute = true
-                                            val result = routingService.getRoute(
-                                                uLoc.latitude,
-                                                uLoc.longitude,
-                                                dest.latitude,
-                                                dest.longitude
-                                            )
-                                            currentRouteResult = result
-                                            isCalculatingRoute = false
-
-                                            if (result != null && result.coordinates.isNotEmpty()) {
-                                                val boundsBuilder = LatLngBounds.Builder()
-                                                boundsBuilder.include(LatLng(uLoc.latitude, uLoc.longitude))
-                                                result.coordinates.forEach { (lat, lng) ->
-                                                    boundsBuilder.include(LatLng(lat, lng))
-                                                }
-                                                mapRef?.animateCamera(
-                                                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120)
-                                                )
-                                            }
-                                        }
                                         viewModel.locationService.stopPassiveTracking()
                                         viewModel.locationService.startActiveTracking()
                                         viewModel.startBackgroundTracking()
