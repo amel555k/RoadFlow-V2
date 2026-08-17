@@ -75,7 +75,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             SettingsCard(
-                title = "Widget",
+                title = "Widget (beta)",
                 description = "Konfiguracija widgeta početnog ekrana",
                 iconRes = com.amko.roadflow.R.drawable.ic_widget,
                 onClick = onNavigateToWidget

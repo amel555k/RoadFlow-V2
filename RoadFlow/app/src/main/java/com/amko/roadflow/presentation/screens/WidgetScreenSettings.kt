@@ -41,15 +41,27 @@ fun WidgetSettingsScreen(
     }
 
     LaunchedEffect(Unit) {
-        val prefs = mainViewModel.getApplication<android.app.Application>()
-            .getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
-        val city1 = prefs.getString("city1", "Travnik") ?: "Travnik"
-        val city2 = prefs.getString("city2", "Vitez") ?: "Vitez"
-        val loaded = Pair(city1, city2)
+        val context = mainViewModel.getApplication<android.app.Application>()
+        val prefs = context.getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
+        val hasStoredCities = prefs.contains("city1") && prefs.contains("city2")
+
+        val loaded = if (hasStoredCities) {
+            Pair(
+                prefs.getString("city1", "Travnik") ?: "Travnik",
+                prefs.getString("city2", "Vitez") ?: "Vitez"
+            )
+        } else {
+            val defaults = WidgetStateManager.resolveDefaultCities(context)
+            prefs.edit()
+                .putString("city1", defaults.first)
+                .putString("city2", defaults.second)
+                .apply()
+            defaults
+        }
+
         selectedCities.value = loaded
         initialCities.value = loaded
     }
-
     val allCities = RadarConfig.locations.map { it.name }.distinct().sorted()
     val hasChanges = initialCities.value != null && selectedCities.value != initialCities.value
 
@@ -221,5 +233,24 @@ object WidgetStateManager {
     fun updateCities(newCity1: String, newCity2: String) {
         city1Flow.value = newCity1
         city2Flow.value = newCity2
+    }
+
+    fun resolveDefaultCities(context: android.content.Context): Pair<String, String> {
+        val roadflowPrefs = context.getSharedPreferences("roadflow_prefs", android.content.Context.MODE_PRIVATE)
+        val favoriteCity = roadflowPrefs.getString("favorite_city", null)
+
+        if (favoriteCity == null) {
+            return Pair("Travnik", "Vitez")
+        }
+
+        val favoriteLocation = RadarConfig.locations.firstOrNull { it.name == favoriteCity }
+            ?: return Pair(favoriteCity, "Vitez")
+
+        val sameCantonCities = RadarConfig.locations
+            .filter { it.canton == favoriteLocation.canton && it.name != favoriteCity }
+
+        val secondCity = sameCantonCities.randomOrNull()?.name ?: "Vitez"
+
+        return Pair(favoriteCity, secondCity)
     }
 }

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="open_map"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_map"
+        android:shortcutShortLabel="@string/shortcut_map_short"
+        android:shortcutLongLabel="@string/shortcut_map_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.amko.roadflow"
+            android:targetClass="com.amko.roadflow.MainActivity">
+            <extra
+                android:name="open_map_shortcut"
+                android:value="true" />
+        </intent>
+    </shortcut>
+</shortcuts>

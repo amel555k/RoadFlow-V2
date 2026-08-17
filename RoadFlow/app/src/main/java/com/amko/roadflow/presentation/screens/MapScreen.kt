@@ -475,6 +475,7 @@ fun MapScreen(
     var destinationScreenPoint by remember { mutableStateOf<PointF?>(null) }
     var isCalculatingRoute by remember { mutableStateOf(false) }
     var isSearchExpanded by remember { mutableStateOf(false) }
+    var isPickingOnMap by remember { mutableStateOf(false) }
     val routingService = remember { RoutingService() }
 
     fun updateDestinationScreenPoint() {
@@ -1119,9 +1120,31 @@ fun MapScreen(
                                 )
                             )
                             style.addLayer(
+                                org.maplibre.android.style.layers.LineLayer("route-alt-border-layer", ROUTE_ALT_SOURCE_ID).apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#0D47A1")),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineWidth(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(6, 5f),
+                                                org.maplibre.android.style.expressions.Expression.stop(14, 8f),
+                                                org.maplibre.android.style.expressions.Expression.stop(18, 13f)
+                                            )
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineCap(
+                                            org.maplibre.android.style.layers.Property.LINE_CAP_ROUND
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineJoin(
+                                            org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND
+                                        )
+                                    )
+                                }
+                            )
+                            style.addLayer(
                                 org.maplibre.android.style.layers.LineLayer(ROUTE_ALT_LAYER_ID, ROUTE_ALT_SOURCE_ID).apply {
                                     setProperties(
-                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#9FC5CC")),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#D6E4E8")),
                                         org.maplibre.android.style.layers.PropertyFactory.lineWidth(
                                             org.maplibre.android.style.expressions.Expression.interpolate(
                                                 org.maplibre.android.style.expressions.Expression.linear(),
@@ -1170,6 +1193,29 @@ fun MapScreen(
                                     "route-source",
                                     FeatureCollection.fromFeatures(emptyList())
                                 )
+                            )
+
+                            style.addLayer(
+                                org.maplibre.android.style.layers.LineLayer("route-border-layer", "route-source").apply {
+                                    setProperties(
+                                        org.maplibre.android.style.layers.PropertyFactory.lineColor(Color.parseColor("#081B33")),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineWidth(
+                                            org.maplibre.android.style.expressions.Expression.interpolate(
+                                                org.maplibre.android.style.expressions.Expression.linear(),
+                                                org.maplibre.android.style.expressions.Expression.zoom(),
+                                                org.maplibre.android.style.expressions.Expression.stop(6, 6f),
+                                                org.maplibre.android.style.expressions.Expression.stop(14, 10f),
+                                                org.maplibre.android.style.expressions.Expression.stop(18, 16f)
+                                            )
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineCap(
+                                            org.maplibre.android.style.layers.Property.LINE_CAP_ROUND
+                                        ),
+                                        org.maplibre.android.style.layers.PropertyFactory.lineJoin(
+                                            org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND
+                                        )
+                                    )
+                                }
                             )
 
                             style.addLayer(
@@ -1427,6 +1473,7 @@ fun MapScreen(
                 if (!isActiveTracking && !isCalculatingRoute) {
                     LocationSearchBar(
                         selectedLocationName = selectedDestinationName,
+                        isPickingOnMap = isPickingOnMap,
                         onExpandedChange = { expanded ->
                             isSearchExpanded = expanded
                         },
@@ -1441,9 +1488,44 @@ fun MapScreen(
                         },
                         onLocationCleared = {
                             clearRoute()
+                        },
+                        onPickOnMapStart = {
+                            isPickingOnMap = true
+                            isSearchExpanded = false
+                        },
+                        onPickOnMapCancel = {
+                            isPickingOnMap = false
+                        },
+                        onPickOnMapConfirm = {
+                            val map = mapRef
+                            val target = map?.cameraPosition?.target
+                            if (target != null) {
+                                selectedDestination = target
+                                selectedDestinationName = "Odabrana lokacija"
+                                routeAlternatives = emptyList()
+                                selectedRouteIndex = 0
+                                isPickingOnMap = false
+                                coroutineScope.launch {
+                                    computeRoutesTo(target)
+                                }
+                            } else {
+                                isPickingOnMap = false
+                            }
                         }
                     )
                 }
+            }
+
+            if (isPickingOnMap) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_locate),
+                    contentDescription = "Odabrana tačka na karti",
+                    tint = androidx.compose.ui.graphics.Color(0xFFF44336),
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(bottom = 40.dp)
+                        .size(40.dp)
+                )
             }
             if (isActiveTracking && (currentRouteResult != null || isCalculatingRoute) && !isSearchExpanded) {
                 Box(

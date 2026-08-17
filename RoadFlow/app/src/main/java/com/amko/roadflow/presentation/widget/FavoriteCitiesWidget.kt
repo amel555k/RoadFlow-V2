@@ -42,8 +42,24 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
         Log.d("WidgetDebug", "provideGlance: POZVAN za id=$id")
 
         val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
-        val city1 = prefs.getString("city1", "Travnik") ?: "Travnik"
-        val city2 = prefs.getString("city2", "Vitez") ?: "Vitez"
+        val hasStoredCities = prefs.contains("city1") && prefs.contains("city2")
+
+        val (defaultCity1, defaultCity2) = if (hasStoredCities) {
+            Pair(
+                prefs.getString("city1", "Travnik") ?: "Travnik",
+                prefs.getString("city2", "Vitez") ?: "Vitez"
+            )
+        } else {
+            val defaults = com.amko.roadflow.presentation.screens.WidgetStateManager.resolveDefaultCities(context)
+            prefs.edit()
+                .putString("city1", defaults.first)
+                .putString("city2", defaults.second)
+                .apply()
+            defaults
+        }
+
+        val city1 = defaultCity1
+        val city2 = defaultCity2
         var lastUpdateTime = prefs.getString("widget_last_update", "") ?: ""
 
         Log.d("WidgetDebug", "provideGlance: procitano iz prefs -> city1=$city1, city2=$city2, lastUpdateTime=$lastUpdateTime")
@@ -245,6 +261,7 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
         val capabilities = cm.getNetworkCapabilities(network) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
+
 
     private fun readCachedRadars(context: Context, city1: String, city2: String, isCachedForToday: Boolean): Pair<List<RadarData>, Boolean> {
         val file = File(context.filesDir, "widget.txt")

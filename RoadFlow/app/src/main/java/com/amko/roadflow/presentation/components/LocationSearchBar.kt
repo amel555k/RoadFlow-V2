@@ -57,6 +57,10 @@ fun LocationSearchBar(
     onExpandedChange: (Boolean) -> Unit = {},
     onLocationCleared: () -> Unit = {},
     selectedLocationName: String? = null,
+    isPickingOnMap: Boolean = false,
+    onPickOnMapStart: () -> Unit = {},
+    onPickOnMapConfirm: () -> Unit = {},
+    onPickOnMapCancel: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isExpanded by remember { mutableStateOf(false) }
@@ -78,7 +82,52 @@ fun LocationSearchBar(
     }
 
     Box(modifier = modifier) {
-        if (!isExpanded) {
+        if (isPickingOnMap) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { onPickOnMapCancel() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Otkaži biranje na karti",
+                            tint = Color(0xFF004E5A)
+                        )
+                    }
+
+                    Text(
+                        text = "Odaberi destinaciju na karti",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    TextButton(
+                        onClick = { onPickOnMapConfirm() }
+                    ) {
+                        Text(
+                            text = "OK",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF004E5A)
+                        )
+                    }
+                }
+            }
+        } else if (!isExpanded) {
             if (selectedLocationName != null) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -215,49 +264,76 @@ fun LocationSearchBar(
                         }
                     }
 
+                    HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                isExpanded = false
+                                onExpandedChange(false)
+                                query = ""
+                                searchResults = emptyList()
+                                expandedFromSelection = false
+                                onPickOnMapStart()
+                            }
+                            .padding(start = 64.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+
+                        Text(
+                            text = "Odaberi destinaciju na karti",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF004E5A)
+                        )
+                    }
+
                     AnimatedVisibility(
                         visible = searchResults.isNotEmpty(),
                         enter = fadeIn(),
                         exit = fadeOut() + shrinkVertically()
                     ) {
-                        HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
-                        LazyColumn(
-                            modifier = Modifier.heightIn(max = 240.dp)
-                        ) {
-                            items(searchResults) { result ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            onLocationSelected(
-                                                LatLng(result.lat, result.lon),
-                                                result.displayName
-                                            )
-                                            isExpanded = false
-                                            expandedFromSelection = false
-                                            onExpandedChange(false)
-                                            query = ""
-                                            searchResults = emptyList()
-                                        }
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.LocationOn,
-                                        contentDescription = null,
-                                        tint = Color(0xFF004E5A),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = result.displayName,
-                                        fontSize = 13.sp,
-                                        color = Color.Black,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                        Column {
+                            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = 240.dp)
+                            ) {
+                                items(searchResults) { result ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onLocationSelected(
+                                                    LatLng(result.lat, result.lon),
+                                                    result.displayName
+                                                )
+                                                isExpanded = false
+                                                expandedFromSelection = false
+                                                onExpandedChange(false)
+                                                query = ""
+                                                searchResults = emptyList()
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.LocationOn,
+                                            contentDescription = null,
+                                            tint = Color(0xFF004E5A),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = result.displayName,
+                                            fontSize = 13.sp,
+                                            color = Color.Black,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    HorizontalDivider(color = Color.LightGray.copy(alpha = 0.3f))
                                 }
-                                HorizontalDivider(color = Color.LightGray.copy(alpha = 0.3f))
                             }
                         }
                     }

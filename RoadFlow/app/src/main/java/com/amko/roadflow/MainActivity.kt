@@ -46,12 +46,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
 
-        pendingOpenMap.value = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
+        val openedFromNotification = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
+        val openedFromShortcut = intent?.getBooleanExtra("open_map_shortcut", false) == true
+        pendingOpenMap.value = openedFromNotification
 
         val prefs = getSharedPreferences("roadflow_prefs", MODE_PRIVATE)
         val hasFavoriteChoice = prefs.getString("favorite_canton", null) != null
-        val startDestination = if (hasFavoriteChoice) "main" else "splash"
-
+        val startDestination = when {
+            openedFromShortcut && hasFavoriteChoice -> "map"
+            hasFavoriteChoice -> "main"
+            else -> "splash"
+        }
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
             val themeMode by themeViewModel.themeMode.collectAsState()
@@ -203,7 +208,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false)) {
+        val openedFromNotification = intent.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false)
+        val openedFromShortcut = intent.getBooleanExtra("open_map_shortcut", false)
+        if (openedFromNotification || openedFromShortcut) {
             pendingOpenMap.value = true
         }
     }
