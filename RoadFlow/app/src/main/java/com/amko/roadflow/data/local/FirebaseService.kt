@@ -1,6 +1,7 @@
 package com.amko.roadflow.data.local
 
 import com.amko.roadflow.domain.model.FirebaseRadarItem
+import com.amko.roadflow.domain.model.RadarCoordinate
 import com.amko.roadflow.domain.model.RadarData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,14 +11,18 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import javax.crypto.Cipher
+import javax.crypto.spec.SecretKeySpec
+import android.util.Base64
+import android.util.Log
 
 class FirebaseService {
 
     companion object {
         val FIREBASE_BASE_URL = "${Secrets.FIREBASE_BASE_URL}radari-sbk"
         val HISTORY_BASE_URL = "${Secrets.FIREBASE_BASE_URL}history"
+        const val GITHUB_REPO_URL = Secrets.GITHUB_REPO_URL
     }
 
     private val client = OkHttpClient.Builder()
@@ -25,6 +30,55 @@ class FirebaseService {
         .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
         .build()
     private var cachedToken: String? = null
+
+    private fun decryptAes(encryptedBase64: String): String {
+        val startDecrypt = System.currentTimeMillis()
+        Log.d("BrzinaFetcha", "Dekripcija pocetak")
+
+        val keyBytes = Secrets.AES_KEY.toByteArray(Charsets.UTF_8)
+        val secretKey = SecretKeySpec(keyBytes, "AES")
+        val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+        cipher.init(Cipher.DECRYPT_MODE, secretKey)
+
+        val decodedBytes = Base64.decode(encryptedBase64, Base64.DEFAULT)
+        val decryptedBytes = cipher.doFinal(decodedBytes)
+        val result = String(decryptedBytes, Charsets.UTF_8)
+
+        val endDecrypt = System.currentTimeMillis()
+        Log.d("BrzinaFetcha", "Dekripcija kraj, trajanje: ${endDecrypt - startDecrypt} ms")
+
+        return result
+    }
+
+    private suspend fun fetchPrivateEncryptedGithubFile(fileName: String): String? = withContext(Dispatchers.IO) {
+        val startGithubFetch = System.currentTimeMillis()
+        Log.d("BrzinaFetcha", "Startno vrijeme fetchanja sa githuba: $fileName")
+
+        val url = "$GITHUB_REPO_URL/$fileName"
+
+        try {
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer ${Secrets.GITHUB_PAT}")
+                .addHeader("Accept", "application/vnd.github.v3.raw")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val encryptedContent = response.body?.string()
+                Log.d("BrzinaFetcha", "Kraj fetchanja sa githuba ($fileName), trajanje: ${System.currentTimeMillis() - startGithubFetch} ms")
+                if (!encryptedContent.isNullOrBlank()) {
+                    return@withContext decryptAes(encryptedContent)
+                }
+            } else {
+                android.util.Log.d("WidgetDebug", "FirebaseService: Github error code=${response.code}")
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("WidgetDebug", "FirebaseService: fetchPrivateEncryptedGithubFile EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
+        }
+        null
+    }
 
     private suspend fun getAuthTokenAsync(): String? = withContext(Dispatchers.IO) {
         if (!cachedToken.isNullOrEmpty()) return@withContext cachedToken
@@ -65,7 +119,7 @@ class FirebaseService {
         val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
         val url = getAuthenticatedUrl("$FIREBASE_BASE_URL/$dateStr.json")
 
-        android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync pozivam URL (bez tokena u logu za sigurnost)")
+        android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync pozivam URL")
 
         try {
             val request = Request.Builder().url(url).get().build()
@@ -209,6 +263,77 @@ class FirebaseService {
 
         radars
     }
+
+    suspend fun getMobilniCoordinatesAsync(): List<RadarCoordinate> = withContext(Dispatchers.IO) {
+        fetchMobilniCoordinatesFromGithubAsync("mobilni.enc")
+    }
+
+    suspend fun getStacionarniCoordinatesAsync(): List<RadarCoordinate> = withContext(Dispatchers.IO) {
+        fetchCoordinatesFromGithubAsync("stacionirani.enc", stacionaran = true)
+    }
+
+    private suspend fun fetchCoordinatesFromGithubAsync(fileName: String, stacionaran: Boolean): List<RadarCoordinate> = withContext(Dispatchers.IO) {
+        val coordinates = mutableListOf<RadarCoordinate>()
+        val json = fetchPrivateEncryptedGithubFile(fileName) ?: return@withContext coordinates
+
+        try {
+            val rootArray = org.json.JSONArray(json)
+
+            for (i in 0 until rootArray.length()) {
+                val itemObj = rootArray.optJSONObject(i) ?: continue
+                coordinates.add(
+                    RadarCoordinate(
+                        mainName = itemObj.optString("ime", ""),
+                        latitude = itemObj.optDouble("latitude", 0.0),
+                        longitude = itemObj.optDouble("longitude", 0.0),
+                        speedLimit = itemObj.optInt("ogranicenje", 0),
+                        startTime = if (itemObj.isNull("startTime")) null else itemObj.optString("startTime", null),
+                        endTime = if (itemObj.isNull("endTime")) null else itemObj.optString("endTime", null),
+                        stacionaran = stacionaran,
+                        city = if (itemObj.isNull("city")) null else itemObj.optString("city", null)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("WidgetDebug", "FirebaseService: fetchCoordinatesFromGithubAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        coordinates
+    }
+
+    private suspend fun fetchMobilniCoordinatesFromGithubAsync(fileName: String): List<RadarCoordinate> = withContext(Dispatchers.IO) {
+        val coordinates = mutableListOf<RadarCoordinate>()
+        val json = fetchPrivateEncryptedGithubFile(fileName) ?: return@withContext coordinates
+
+        try {
+            val rootObj = JSONObject(json)
+
+            rootObj.keys().forEach { cityName ->
+                val itemsArray = rootObj.optJSONArray(cityName) ?: return@forEach
+
+                for (i in 0 until itemsArray.length()) {
+                    val itemObj = itemsArray.optJSONObject(i) ?: continue
+                    coordinates.add(
+                        RadarCoordinate(
+                            mainName = itemObj.optString("ime", ""),
+                            latitude = itemObj.optDouble("latitude", 0.0),
+                            longitude = itemObj.optDouble("longitude", 0.0),
+                            speedLimit = itemObj.optInt("ogranicenje", 0),
+                            startTime = if (itemObj.isNull("startTime")) null else itemObj.optString("startTime", null),
+                            endTime = if (itemObj.isNull("endTime")) null else itemObj.optString("endTime", null),
+                            stacionaran = false,
+                            city = cityName
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("WidgetDebug", "FirebaseService: fetchMobilniCoordinatesFromGithubAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        coordinates
+    }
+
     private fun normalizeFirebaseLocation(raw: String): String {
         if (raw.isBlank()) return raw
         return raw.trim()

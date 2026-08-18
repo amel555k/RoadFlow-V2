@@ -6,6 +6,7 @@ val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -13,11 +14,7 @@ plugins {
 
 android {
     namespace = "com.amko.roadflow"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.amko.roadflow"
@@ -33,11 +30,15 @@ android {
         buildConfigField("String", "BASE_URL", "\"${localProperties.getProperty("BASE_URL") ?: ""}\"")
         buildConfigField("String", "Z_M_API_KEY", "\"${localProperties.getProperty("Z_M_API_KEY", "")}\"")
         buildConfigField("String", "OSRM_URL", "\"${localProperties.getProperty("OSRM_URL", "")}\"")
+        buildConfigField("String", "GITHUB_PAT", "\"${localProperties.getProperty("GITHUB_PAT", "")}\"")
+        buildConfigField("String", "GITHUB_REPO_URL", "\"${localProperties.getProperty("GITHUB_REPO_URL", "")}\"")
+        buildConfigField("String", "AES_KEY", "\"${localProperties.getProperty("AES_KEY", "")}\"")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -53,13 +54,13 @@ android {
         buildConfig = true
     }
 }
+
 configurations.all {
     resolutionStrategy {
         force("androidx.vectordrawable:vectordrawable:1.1.0")
         force("androidx.vectordrawable:vectordrawable-animated:1.1.0")
     }
 }
-
 
 dependencies {
     implementation(libs.androidx.core.ktx)

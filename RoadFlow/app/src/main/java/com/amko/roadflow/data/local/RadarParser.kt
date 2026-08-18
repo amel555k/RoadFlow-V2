@@ -204,6 +204,46 @@ class RadarParser(
             }
         }.flowOn(Dispatchers.IO)
 
+
+    suspend fun debugLogUnmatchedLocations() {
+        val content = readFromFileAsync()
+        if (content.isBlank()) {
+            android.util.Log.d("ROADFLOW_DEBUG", "lista.txt je prazan ili ne postoji")
+            return
+        }
+
+        android.util.Log.d("ROADFLOW_DEBUG", "===== CIJEL SADRŽAJ lista.txt =====")
+        content.split("\n").filter { it.isNotBlank() }.forEach {
+            android.util.Log.d("ROADFLOW_DEBUG_RAW", it)
+        }
+
+        android.util.Log.d("ROADFLOW_DEBUG", "===== LOKACIJE BEZ KOORDINATA (promašaji) =====")
+        val lines = content.split("\n").filter { it.isNotBlank() }
+        var currentCity = ""
+        var missCount = 0
+
+        lines.forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.startsWith("===") && trimmed.endsWith("===")) {
+                currentCity = trimmed.replace("===", "").trim()
+                return@forEach
+            }
+            val parts = trimmed.split(" - ", limit = 2)
+            if (parts.size == 2) {
+                val timePart = parts[0].trim()
+                val locationName = parts[1].trim()
+                val coord = RadarConfig.findCoordinateByName(locationName, currentCity)
+                if (coord == null) {
+                    missCount++
+                    android.util.Log.w(
+                        "ROADFLOW_DEBUG_MISS",
+                        "GRAD='$currentCity' | VRIJEME='$timePart' | LOKACIJA='$locationName'"
+                    )
+                }
+            }
+        }
+        android.util.Log.d("ROADFLOW_DEBUG", "===== UKUPNO PROMAŠAJA: $missCount =====")
+    }
     private suspend fun parseSingleIdWithErrorHandlingAsync(baseCityName: String, id: Int, mapEnabled: Boolean): List<RadarData> {
         return try {
             parseSingleIdAsync(baseCityName, id, mapEnabled)
@@ -269,7 +309,9 @@ class RadarParser(
                     locationPart = preprocessBihamkLocation(locationPart)
 
                     if (mapEnabled) {
+                        android.util.Log.d("ROADFLOW_TRACE", "RAW locationPart='$locationPart' (len=${locationPart.length}) cityName='$cityName' bytes=${locationPart.toByteArray(Charsets.UTF_8).joinToString(",") { it.toString() }}")
                         val coords = RadarConfig.findCoordinatesByName(locationPart, cityName)
+                        android.util.Log.d("ROADFLOW_TRACE", "RESULT coords.size=${coords.size} for '$locationPart'")
                         if (coords.isNotEmpty()) {
                             coords.forEach { coordinate ->
                                 radars.add(

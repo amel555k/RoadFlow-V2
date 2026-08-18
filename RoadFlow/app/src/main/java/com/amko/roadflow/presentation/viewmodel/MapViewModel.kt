@@ -3,6 +3,7 @@ package com.amko.roadflow.presentation.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.amko.roadflow.data.local.CoordinateRepository
 import com.amko.roadflow.data.local.FirebaseService
 import com.amko.roadflow.data.local.LocationTrackingService
 import com.amko.roadflow.data.local.RadarAlertService
@@ -21,6 +22,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val firebaseService = FirebaseService()
     private val parser = RadarParser(application, firebaseService)
+    private val coordinateRepository = CoordinateRepository(application, firebaseService)
 
     init {
         RadarTrackingService.init(application)
@@ -86,7 +88,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                if (RadarConfig.coordinates.isEmpty()) {
+                    RadarConfig.coordinates = coordinateRepository.loadCoordinatesAsync()
+                }
+
                 parser.parseAllLocationsAsFlow().collect { }
+
+                parser.debugLogUnmatchedLocations()
 
                 val all = parser.getExpandedRadarsForMapAsync()
                 _allRadars.value = all
@@ -100,7 +108,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-
     private fun isActiveNow(timeRange: String, now: LocalTime): Boolean {
         return try {
             val parts = timeRange.split(" do ")

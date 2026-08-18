@@ -39,7 +39,6 @@ import com.amko.roadflow.data.local.ActiveTrackingAnimator
 import com.amko.roadflow.data.local.RouteResult
 import com.amko.roadflow.data.local.RoutingService
 import com.amko.roadflow.data.local.Secrets.MAP_API_KEY
-import com.amko.roadflow.data.local.TrackingRecorder
 import com.amko.roadflow.presentation.components.*
 import com.amko.roadflow.presentation.viewmodel.MapViewModel
 import com.amko.roadflow.utils.createCircleFeature
@@ -393,7 +392,6 @@ fun MapScreen(
     val context = LocalContext.current
 
     DisposableEffect(Unit) {
-        TrackingRecorder.start(context)
         val activity = context as? android.app.Activity
         val window = activity?.window
 
@@ -413,7 +411,6 @@ fun MapScreen(
         }
 
         onDispose {
-            TrackingRecorder.stop()
             if (window != null) {
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -1679,6 +1676,7 @@ fun MapScreen(
                     if (didInitialZoom && locationFound && isGpsEnabled) {
                         Button(
                             onClick = {
+                                if (isPickingOnMap) return@Button
                                 coroutineScope.launch {
                                     trackingButtonScale = 0.85f
                                     delay(150)
@@ -1737,11 +1735,13 @@ fun MapScreen(
                                     }
                                 }
                             },
+                            enabled = !isPickingOnMap,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isActiveTracking)
                                     androidx.compose.ui.graphics.Color(0xFFF44336)
                                 else
-                                    androidx.compose.ui.graphics.Color(0xFFD2F7FF)
+                                    androidx.compose.ui.graphics.Color(0xFFD2F7FF),
+                                disabledContainerColor = androidx.compose.ui.graphics.Color(0xFFD2F7FF).copy(alpha = 0.4f)
                             ),
                             elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
                             contentPadding = PaddingValues(horizontal = 30.dp, vertical = 15.dp),
@@ -1750,6 +1750,7 @@ fun MapScreen(
                                 .graphicsLayer {
                                     scaleX = animatedScale
                                     scaleY = animatedScale
+                                    alpha = if (isPickingOnMap) 0.5f else 1f
                                 }
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1824,6 +1825,7 @@ fun MapScreen(
                     if (didInitialZoom && locationFound && isGpsEnabled) {
                         Button(
                             onClick = {
+                                if (isPickingOnMap) return@Button
                                 coroutineScope.launch {
                                     trackingButtonScale = 0.85f
                                     delay(150)
@@ -1882,11 +1884,13 @@ fun MapScreen(
                                     }
                                 }
                             },
+                            enabled = !isPickingOnMap,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isActiveTracking)
                                     androidx.compose.ui.graphics.Color(0xFFF44336)
                                 else
-                                    androidx.compose.ui.graphics.Color(0xFFD2F7FF)
+                                    androidx.compose.ui.graphics.Color(0xFFD2F7FF),
+                                disabledContainerColor = androidx.compose.ui.graphics.Color(0xFFD2F7FF).copy(alpha = 0.4f)
                             ),
                             elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
                             contentPadding = PaddingValues(horizontal = 30.dp, vertical = 15.dp),
@@ -1895,6 +1899,7 @@ fun MapScreen(
                                 .graphicsLayer {
                                     scaleX = animatedScale
                                     scaleY = animatedScale
+                                    alpha = if (isPickingOnMap) 0.5f else 1f
                                 }
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
