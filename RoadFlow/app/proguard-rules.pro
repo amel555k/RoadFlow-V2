@@ -1,8 +1,7 @@
 -keepattributes Signature,AnnotationDefault,EnclosingMethod,InnerClasses,SourceFile,LineNumberTable
 
 -keep class com.amko.roadflow.domain.model.** { *; }
--keep class com.amko.roadflow.data.local.Secrets { *; }
--keep class com.amko.roadflow.BuildConfig { *; }
+
 
 -keep class org.json.** { *; }
 

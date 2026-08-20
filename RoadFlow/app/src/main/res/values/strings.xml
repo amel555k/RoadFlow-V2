@@ -3,4 +3,6 @@
     <string name="widget_description">Prikazuje radare za omiljene gradove</string>
     <string name="shortcut_map_short">Mapa</string>
     <string name="shortcut_map_long">Otvori mapu radara</string>
+    <string name="shortcut_history_short">Kalendar</string>
+    <string name="shortcut_history_long">Otvori Kalendar</string>
 </resources>

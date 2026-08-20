@@ -18,21 +18,17 @@ class CoordinateRepository(
     suspend fun loadCoordinatesAsync(forceRefresh: Boolean = false): List<RadarCoordinate> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
 
-        if (!forceRefresh && filePath.exists()) {
-            Log.d("BrzinaFetcha", "Pronadjen lokalni JSON fajl na lokaciji: ${filePath.absolutePath}")
-            Log.d("BrzinaFetcha", "Pocinje ucitavanje podataka iz lokalnog JSON fajla...")
+        val fetched = fetchAndCacheAsync()
+        if (fetched.isNotEmpty()) {
+            return@withContext fetched
+        }
+
+        if (filePath.exists()) {
             val cached = readFromDiskAsync()
             if (cached.isNotEmpty()) {
-                Log.d("BrzinaFetcha", "Uspjesno ucitano ${cached.size} koordinata iz lokalnog fajla, trajanje: ${System.currentTimeMillis() - startTime} ms")
                 return@withContext cached
             }
         }
-
-        Log.d("BrzinaFetcha", "Lokalni JSON fajl ne postoji ili je prazan. Pocinje fetch sa GitHub-a...")
-        val fetched = fetchAndCacheAsync()
-        if (fetched.isNotEmpty()) return@withContext fetched
-
-        if (filePath.exists()) return@withContext readFromDiskAsync()
 
         emptyList()
     }
@@ -46,6 +42,19 @@ class CoordinateRepository(
             val mobilni = firebaseService.getMobilniCoordinatesAsync()
             val stacionirani = firebaseService.getStacionarniCoordinatesAsync()
             val combined = mobilni + stacionirani
+
+            combined
+                .filter {
+                    it.mainName.contains("Brank", true) ||
+                            it.mainName.contains("Duh", true) ||
+                            it.mainName.contains("Kaonik", true)
+                }
+                .forEach {
+                    Log.d(
+                        "COORD_DEBUG",
+                        "mainName='${it.mainName}' | city='${it.city}' | lat=${it.latitude} | lon=${it.longitude}"
+                    )
+                }
 
             if (combined.isNotEmpty()) {
                 saveToDiskAsync(combined)

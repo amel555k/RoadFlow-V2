@@ -35,7 +35,7 @@ class FirebaseService {
         val startDecrypt = System.currentTimeMillis()
         Log.d("BrzinaFetcha", "Dekripcija pocetak")
 
-        val keyBytes = Secrets.AES_KEY.toByteArray(Charsets.UTF_8)
+        val keyBytes = Secrets.gkord.toByteArray(Charsets.UTF_8)
         val secretKey = SecretKeySpec(keyBytes, "AES")
         val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
         cipher.init(Cipher.DECRYPT_MODE, secretKey)

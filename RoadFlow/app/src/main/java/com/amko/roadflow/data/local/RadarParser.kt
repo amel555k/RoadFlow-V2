@@ -206,6 +206,7 @@ class RadarParser(
 
 
     suspend fun debugLogUnmatchedLocations() {
+        android.util.Log.d("ROADFLOW_DEBUG", "debugLogUnmatchedLocations: RadarConfig.coordinates.size=${RadarConfig.coordinates.size}")
         val content = readFromFileAsync()
         if (content.isBlank()) {
             android.util.Log.d("ROADFLOW_DEBUG", "lista.txt je prazan ili ne postoji")

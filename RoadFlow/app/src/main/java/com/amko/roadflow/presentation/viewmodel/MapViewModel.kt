@@ -88,9 +88,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                if (RadarConfig.coordinates.isEmpty()) {
-                    RadarConfig.coordinates = coordinateRepository.loadCoordinatesAsync()
-                }
+                RadarConfig.coordinates = coordinateRepository.loadCoordinatesAsync()
 
                 parser.parseAllLocationsAsFlow().collect { }
 

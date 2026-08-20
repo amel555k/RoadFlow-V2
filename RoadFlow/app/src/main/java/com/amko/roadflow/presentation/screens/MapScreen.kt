@@ -92,6 +92,9 @@ private const val SNAP_DISTANCE_METERS = 20.0
 private const val SNAP_MAX_ANGLE_DIFF_DEGREES = 55.0
 private const val SNAP_DISTANCE_HYSTERESIS_METERS = 30.0
 private const val SNAP_ANGLE_HYSTERESIS_DEGREES = 70.0
+private const val OFF_ROUTE_REROUTE_DELAY_NANOS = 5_000_000_000
+private const val OFF_ROUTE_DISTANCE_METERS = 50.0
+private const val REROUTE_COOLDOWN_NANOS = 10_000_000_000L
 
 private fun createDestinationBitmap(context: android.content.Context): android.graphics.Bitmap {
     val density = context.resources.displayMetrics.density
@@ -461,6 +464,9 @@ fun MapScreen(
     var showGpsLoading by remember { mutableStateOf(false) }
     var lastSnapWasSuccessful by remember { mutableStateOf(false) }
     var lastSnapDistanceMeters by remember { mutableStateOf<Double?>(null) }
+    var offRouteSinceNanos by remember { mutableStateOf<Long?>(null) }
+    var lastRerouteNanos by remember { mutableStateOf(0L) }
+    var isRerouting by remember { mutableStateOf(false) }
 
     var routeAlternatives by remember { mutableStateOf<List<RouteResult>>(emptyList()) }
     var selectedRouteIndex by remember { mutableStateOf(0) }
@@ -887,7 +893,7 @@ fun MapScreen(
             else FeatureCollection.fromFeatures(emptyList())
         )
         labelSource?.setGeoJson(
-            if (labelFeature != null) FeatureCollection.fromFeature(labelFeature!!)
+            if (!isActiveTracking && labelFeature != null) FeatureCollection.fromFeature(labelFeature!!)
             else FeatureCollection.fromFeatures(emptyList())
         )
         altLabelSource?.setGeoJson(
@@ -1004,6 +1010,58 @@ fun MapScreen(
             } else {
                 animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = false)
             }
+        }
+    }
+
+    LaunchedEffect(lastSnapWasSuccessful, lastSnapDistanceMeters, isActiveTracking) {
+        if (!isActiveTracking) {
+            offRouteSinceNanos = null
+            return@LaunchedEffect
+        }
+
+        val distance = lastSnapDistanceMeters
+        val isOffRoute = !lastSnapWasSuccessful && distance != null && distance > OFF_ROUTE_DISTANCE_METERS
+
+        if (!isOffRoute) {
+            offRouteSinceNanos = null
+            return@LaunchedEffect
+        }
+
+        if (offRouteSinceNanos == null) {
+            offRouteSinceNanos = System.nanoTime()
+        }
+
+        delay(OFF_ROUTE_REROUTE_DELAY_NANOS / 1_000_000L)
+
+        val startedAt = offRouteSinceNanos ?: return@LaunchedEffect
+        val elapsed = System.nanoTime() - startedAt
+        if (elapsed < OFF_ROUTE_REROUTE_DELAY_NANOS) return@LaunchedEffect
+
+        val now = System.nanoTime()
+        if (now - lastRerouteNanos < REROUTE_COOLDOWN_NANOS) return@LaunchedEffect
+        if (isRerouting) return@LaunchedEffect
+
+        val destination = selectedDestination ?: return@LaunchedEffect
+        val currentLoc = userLocation ?: return@LaunchedEffect
+
+        isRerouting = true
+        lastRerouteNanos = now
+        try {
+            val results = routingService.getRoutes(
+                currentLoc.latitude,
+                currentLoc.longitude,
+                destination.latitude,
+                destination.longitude
+            )
+            if (results.isNotEmpty()) {
+                routeAlternatives = results
+                selectedRouteIndex = 0
+                labelFractions = emptyMap()
+            }
+        } catch (e: Exception) {
+        } finally {
+            isRerouting = false
+            offRouteSinceNanos = null
         }
     }
 

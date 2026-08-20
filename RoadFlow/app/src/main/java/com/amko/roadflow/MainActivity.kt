@@ -7,9 +7,12 @@ import androidx.activity.compose.setContent
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -17,29 +20,27 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.amko.roadflow.data.local.RadarTrackingService
+import com.amko.roadflow.domain.model.Canton
+import com.amko.roadflow.presentation.screens.HistoryScreen
 import com.amko.roadflow.presentation.screens.MainScreen
 import com.amko.roadflow.presentation.screens.MapScreen
 import com.amko.roadflow.presentation.screens.SettingsScreen
+import com.amko.roadflow.presentation.screens.SoundSettingsScreen
+import com.amko.roadflow.presentation.screens.SplashScreen
 import com.amko.roadflow.presentation.screens.ThemeSettingsScreen
 import com.amko.roadflow.presentation.screens.WidgetSettingsScreen
-import com.amko.roadflow.presentation.screens.SoundSettingsScreen
+import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
 import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.presentation.viewmodel.SoundViewModel
+import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
 import com.amko.roadflow.ui.theme.RoadFlowTheme
 import org.maplibre.android.MapLibre
-import com.amko.roadflow.presentation.screens.HistoryScreen
-import com.amko.roadflow.presentation.viewmodel.HistoryViewModel
-import androidx.compose.runtime.collectAsState
-import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
-import com.amko.roadflow.presentation.screens.SplashScreen
-import com.amko.roadflow.domain.model.Canton
-import androidx.compose.runtime.remember
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 class MainActivity : ComponentActivity() {
 
     private var navControllerRef: NavHostController? = null
     private var pendingOpenMap = mutableStateOf(false)
+    private var pendingOpenHistory = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -47,16 +48,21 @@ class MainActivity : ComponentActivity() {
         MapLibre.getInstance(this)
 
         val openedFromNotification = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
-        val openedFromShortcut = intent?.getBooleanExtra("open_map_shortcut", false) == true
-        pendingOpenMap.value = openedFromNotification
+        val openedFromMapShortcut = intent?.getBooleanExtra("open_map_shortcut", false) == true
+        val openedFromHistoryShortcut = intent?.getBooleanExtra("open_history_shortcut", false) == true
+
+        pendingOpenMap.value = openedFromNotification || openedFromMapShortcut
+        pendingOpenHistory.value = openedFromHistoryShortcut
 
         val prefs = getSharedPreferences("roadflow_prefs", MODE_PRIVATE)
         val hasFavoriteChoice = prefs.getString("favorite_canton", null) != null
         val startDestination = when {
-            openedFromShortcut && hasFavoriteChoice -> "map"
+            openedFromHistoryShortcut -> "history"
+            openedFromMapShortcut && hasFavoriteChoice -> "map"
             hasFavoriteChoice -> "main"
             else -> "splash"
         }
+
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
             val themeMode by themeViewModel.themeMode.collectAsState()
@@ -83,6 +89,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val shouldOpenMap by pendingOpenMap
+                val shouldOpenHistory by pendingOpenHistory
 
                 LaunchedEffect(shouldOpenMap) {
                     if (shouldOpenMap) {
@@ -92,6 +99,17 @@ class MainActivity : ComponentActivity() {
                             restoreState = true
                         }
                         pendingOpenMap.value = false
+                    }
+                }
+
+                LaunchedEffect(shouldOpenHistory) {
+                    if (shouldOpenHistory) {
+                        navController.navigate("history") {
+                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                        pendingOpenHistory.value = false
                     }
                 }
 
@@ -183,7 +201,7 @@ class MainActivity : ComponentActivity() {
                     }
                     composable("theme_settings") {
                         ThemeSettingsScreen(
-                            mainViewModel=mainViewModel,
+                            mainViewModel = mainViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
@@ -209,9 +227,14 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val openedFromNotification = intent.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false)
-        val openedFromShortcut = intent.getBooleanExtra("open_map_shortcut", false)
-        if (openedFromNotification || openedFromShortcut) {
+        val openedFromMapShortcut = intent.getBooleanExtra("open_map_shortcut", false)
+        val openedFromHistoryShortcut = intent.getBooleanExtra("open_history_shortcut", false)
+
+        if (openedFromNotification || openedFromMapShortcut) {
             pendingOpenMap.value = true
+        }
+        if (openedFromHistoryShortcut) {
+            pendingOpenHistory.value = true
         }
     }
 }

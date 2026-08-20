@@ -32,7 +32,7 @@ android {
         buildConfigField("String", "OSRM_URL", "\"${localProperties.getProperty("OSRM_URL", "")}\"")
         buildConfigField("String", "GITHUB_PAT", "\"${localProperties.getProperty("GITHUB_PAT", "")}\"")
         buildConfigField("String", "GITHUB_REPO_URL", "\"${localProperties.getProperty("GITHUB_REPO_URL", "")}\"")
-        buildConfigField("String", "AES_KEY", "\"${localProperties.getProperty("AES_KEY", "")}\"")
+        buildConfigField("String", "gkord", "\"${localProperties.getProperty("gkord", "")}\"")
     }
 
     buildTypes {
