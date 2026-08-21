@@ -15,3 +15,6 @@
 local.properties
 **/RadarConfig.kt
 /app/release/
+/app/google-services.json
+google-services.json
+**/google-services.json

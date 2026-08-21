@@ -10,6 +10,7 @@ if (localPropertiesFile.exists()) {
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.gms.google-services") version "4.4.2"
 }
 
 android {
@@ -87,4 +88,7 @@ dependencies {
     implementation("androidx.glance:glance-material3:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
+
+    implementation(platform("com.google.firebase:firebase-bom:33.10.0"))
+    implementation("com.google.firebase:firebase-firestore-ktx")
 }

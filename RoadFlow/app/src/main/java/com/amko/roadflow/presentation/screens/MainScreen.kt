@@ -11,10 +11,14 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,28 +32,25 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amko.roadflow.R
 import com.amko.roadflow.domain.model.Canton
 import com.amko.roadflow.domain.model.RadarData
+import com.amko.roadflow.presentation.components.AppAlertDialog
 import com.amko.roadflow.presentation.components.BottomNavBar
 import com.amko.roadflow.presentation.components.CantonPickerDropdown
 import com.amko.roadflow.presentation.components.NoConnectionDialog
 import com.amko.roadflow.presentation.components.RadarItem
 import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.presentation.viewmodel.RadarListItem
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import java.time.format.DateTimeFormatter
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -69,6 +70,7 @@ fun MainScreen(
     val showNoInternet by viewModel.showNoInternet.collectAsState()
     val currentDate by viewModel.currentDate.collectAsState()
     val hasError by viewModel.hasError.collectAsState()
+    val currentAlert by viewModel.currentAlert.collectAsState()
 
     android.util.Log.d("ROADFLOW1", "MainScreen recompose: flatList.size=${flatList.size} isLoading=$isLoading")
     val cityList = remember {
@@ -348,6 +350,15 @@ fun MainScreen(
                 onDismiss = { viewModel.showNoInternet.value = false }
             )
         }
+
+        currentAlert?.let { alert ->
+            AppAlertDialog(
+                message = alert.poruka,
+                onDismiss = {
+                    viewModel.dismissAlert(alert.alertId)
+                }
+            )
+        }
     }
 }
 
@@ -449,6 +460,7 @@ fun ThemeSwitch(
         }
     }
 }
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun RefreshIndicatorWithSuccess(
