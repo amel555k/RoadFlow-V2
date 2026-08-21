@@ -9,9 +9,21 @@ import android.util.Log
 import com.amko.roadflow.data.local.CoordinateRepository
 import com.amko.roadflow.data.local.FirebaseService
 import com.amko.roadflow.data.local.RadarConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class RoadFlowApp : Application() {
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    companion object {
+        @Volatile
+        var coordinatesReady: Boolean = false
+            private set
+    }
+
     override fun onCreate() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -25,13 +37,15 @@ class RoadFlowApp : Application() {
         }
 
         val coordinateRepository = CoordinateRepository(applicationContext, FirebaseService())
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        appScope.launch {
             try {
                 val loadedCoords = coordinateRepository.loadCoordinatesAsync()
                 RadarConfig.coordinates = loadedCoords
                 Log.d("BrzinaFetcha", "Momenat dodjele varijabli RadarConfig.coordinates, ucitano ${loadedCoords.size} koord")
             } catch (e: Exception) {
-                android.util.Log.d("WidgetDebug", "RoadFlowApp: greška pri punjenju koordinata: ${e.javaClass.simpleName}: ${e.message}")
+                Log.d("WidgetDebug", "RoadFlowApp: greška pri punjenju koordinata: ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
+                coordinatesReady = true
             }
         }
     }

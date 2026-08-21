@@ -28,7 +28,6 @@ android {
         buildConfigField("String", "FIREBASE_BASE_URL", "\"${localProperties.getProperty("FIREBASE_BASE_URL") ?: ""}\"")
         buildConfigField("String", "MAP_API_KEY", "\"${localProperties.getProperty("MAP_API_KEY") ?: ""}\"")
         buildConfigField("String", "BASE_URL", "\"${localProperties.getProperty("BASE_URL") ?: ""}\"")
-        buildConfigField("String", "Z_M_API_KEY", "\"${localProperties.getProperty("Z_M_API_KEY", "")}\"")
         buildConfigField("String", "OSRM_URL", "\"${localProperties.getProperty("OSRM_URL", "")}\"")
         buildConfigField("String", "GITHUB_PAT", "\"${localProperties.getProperty("GITHUB_PAT", "")}\"")
         buildConfigField("String", "GITHUB_REPO_URL", "\"${localProperties.getProperty("GITHUB_REPO_URL", "")}\"")

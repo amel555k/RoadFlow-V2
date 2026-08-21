@@ -40,7 +40,6 @@ class LocationTrackingService(private val context: Context) {
     private val displayManager: DisplayManager =
         context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
 
-    private val roadsSnapService = RoadsSnapService()
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
 
     private val _location = MutableStateFlow<Location?>(null)
@@ -52,8 +51,8 @@ class LocationTrackingService(private val context: Context) {
     private val _isActiveTracking = MutableStateFlow(false)
     val isActiveTracking: StateFlow<Boolean> = _isActiveTracking.asStateFlow()
 
-    private val _speedKmh = MutableStateFlow(0f)
-    val speedKmh: StateFlow<Float> = _speedKmh.asStateFlow()
+    private val _speedKmh = MutableStateFlow<Float?>(null)
+    val speedKmh: StateFlow<Float?> = _speedKmh.asStateFlow()
 
     fun setInitialLocation(location: Location) {
         _location.value = location
@@ -71,7 +70,7 @@ class LocationTrackingService(private val context: Context) {
     private val orientation = FloatArray(3)
 
     private val movementThresholdMeters = 1.0f
-    private val minSpeedForBearingKmh = 8.0f
+    private val minSpeedForBearingKmh = 5.0f
     private var lastBearing = 0.0
     private var lastCompassBearing = 0.0
 
@@ -80,6 +79,8 @@ class LocationTrackingService(private val context: Context) {
     private var lastFixElapsedRealtimeMs: Long = 0L
     private val speedStaleTimeoutMs = 2500L
     private val speedZeroDistanceMeters = 1.5f
+    private var activeFixCount = 0
+    private val minFixesForReliableSpeed = 3
 
     @SuppressLint("MissingPermission")
     fun startPassiveTracking() {
@@ -128,6 +129,8 @@ class LocationTrackingService(private val context: Context) {
         lastFixLat = null
         lastFixLng = null
         lastFixElapsedRealtimeMs = 0L
+        activeFixCount = 0
+        _speedKmh.value = null
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
             .setMinUpdateIntervalMillis(500L)
@@ -154,17 +157,16 @@ class LocationTrackingService(private val context: Context) {
                         speedKmh = 0f
                     }
 
-                    _speedKmh.value = speedKmh
+                    activeFixCount++
+                    _speedKmh.value = if (activeFixCount >= minFixesForReliableSpeed) speedKmh else null
+
                     lastFixLat = loc.latitude
                     lastFixLng = loc.longitude
                     lastFixElapsedRealtimeMs = nowElapsed
 
                     updateBearing(loc, speedKmh)
 
-                    serviceScope.launch {
-                        val snapped = roadsSnapService.snapToRoad(loc)
-                        _location.value = snapped
-                    }
+                    _location.value = loc
                 }
             }
         }
@@ -179,7 +181,7 @@ class LocationTrackingService(private val context: Context) {
                 val last = lastFixElapsedRealtimeMs
                 if (last == 0L) continue
                 val staleFor = android.os.SystemClock.elapsedRealtime() - last
-                if (staleFor > speedStaleTimeoutMs && _speedKmh.value != 0f) {
+                if (staleFor > speedStaleTimeoutMs && activeFixCount >= minFixesForReliableSpeed && _speedKmh.value != 0f) {
                     _speedKmh.value = 0f
                 }
             }

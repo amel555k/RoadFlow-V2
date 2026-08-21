@@ -200,7 +200,6 @@ class RadarParser(
                     firebaseService.saveRadarsToHistoryAsync(todayDate, newDataOnly)
                 }
             } else {
-                println("[RadarParser] Podaci nisu sačuvani jer nema aktivnih radara ili internet nije dostupan.")
             }
         }.flowOn(Dispatchers.IO)
 
@@ -249,7 +248,6 @@ class RadarParser(
         return try {
             parseSingleIdAsync(baseCityName, id, mapEnabled)
         } catch (e: Exception) {
-            println("[RadarParser] Greška pri parsiranju ID-a $id: ${e.message}")
             emptyList()
         }
     }
@@ -422,9 +420,7 @@ class RadarParser(
             try {
                 filePath.writeText(content, Charsets.UTF_8)
                 filePath.setLastModified(System.currentTimeMillis())
-                println("[RadarParser] Podaci sačuvani u ${filePath.absolutePath}")
             } catch (e: Exception) {
-                println("[RadarParser] Greška pri čuvanju fajla: ${e.message}")
             }
         }
     }

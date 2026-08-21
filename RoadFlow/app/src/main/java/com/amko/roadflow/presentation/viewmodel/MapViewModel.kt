@@ -88,17 +88,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                RadarConfig.coordinates = coordinateRepository.loadCoordinatesAsync()
+                if (RadarConfig.coordinates.isEmpty()) {
+                    RadarConfig.coordinates = coordinateRepository.loadCoordinatesAsync()
+                }
 
                 parser.parseAllLocationsAsFlow().collect { }
-
                 parser.debugLogUnmatchedLocations()
 
                 val all = parser.getExpandedRadarsForMapAsync()
                 _allRadars.value = all
 
                 applyCurrentFilter()
-
                 _isLoading.value = false
             } catch (e: Exception) {
                 _isLoading.value = false

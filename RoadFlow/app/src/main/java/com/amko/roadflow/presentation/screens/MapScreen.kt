@@ -67,6 +67,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import android.location.Location
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
@@ -93,9 +94,9 @@ private const val SNAP_MAX_ANGLE_DIFF_DEGREES = 55.0
 private const val SNAP_DISTANCE_HYSTERESIS_METERS = 30.0
 private const val SNAP_ANGLE_HYSTERESIS_DEGREES = 70.0
 private const val OFF_ROUTE_REROUTE_DELAY_NANOS = 5_000_000_000
-private const val OFF_ROUTE_DISTANCE_METERS = 50.0
+private const val OFF_ROUTE_DISTANCE_METERS = 5.0
 private const val REROUTE_COOLDOWN_NANOS = 10_000_000_000L
-
+private const val ARRIVAL_DISTANCE_METERS = 30.0
 private fun createDestinationBitmap(context: android.content.Context): android.graphics.Bitmap {
     val density = context.resources.displayMetrics.density
     val size = (32 * density).toInt()
@@ -113,6 +114,17 @@ private fun createDestinationBitmap(context: android.content.Context): android.g
     canvas.drawCircle(size / 2f, size / 2f, size / 7f, paint)
 
     return bitmap
+}
+
+private fun formatDistance(distanceMeters: Double): String {
+    return if (distanceMeters < 1000.0) {
+        val roundedTo50 = (Math.round(distanceMeters / 50.0) * 50).toInt()
+        val clamped = if (roundedTo50 <= 0) 50 else roundedTo50
+        "$clamped m"
+    } else {
+        val km = Math.round(distanceMeters / 1000.0)
+        "$km km"
+    }
 }
 
 private fun createRouteLabelBitmap(
@@ -295,7 +307,7 @@ private fun distanceBetween(a: PointF, b: PointF): Float {
     return Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
 }
 
-private data class SnapResult(val lat: Double, val lng: Double, val bearing: Float, val distanceMeters: Double, val isAccepted: Boolean)
+private data class SnapResult(val lat: Double, val lng: Double, val bearing: Float, val distanceMeters: Double, val isAccepted: Boolean, val segmentIndex: Int)
 
 private fun bearingBetween(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
     val lat1Rad = Math.toRadians(lat1)
@@ -335,6 +347,7 @@ private fun snapToRoute(
     var bestLat = 0.0
     var bestLng = 0.0
     var bestSegmentBearing = 0.0
+    var bestSegmentIndex = 0
     var found = false
 
     for (i in 0 until routeCoordinates.size - 1) {
@@ -366,6 +379,7 @@ private fun snapToRoute(
             bestLng = projX / mPerLng
             bestLat = projY / mPerLat
             bestSegmentBearing = bearingBetween(aLat, aLng, bLat, bLng)
+            bestSegmentIndex = i
             found = true
         }
     }
@@ -374,16 +388,16 @@ private fun snapToRoute(
 
     val distanceThreshold = if (wasSnappedLastTime) SNAP_DISTANCE_HYSTERESIS_METERS else SNAP_DISTANCE_METERS
     if (bestDistance > distanceThreshold) {
-        return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = false)
+        return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = false, segmentIndex = bestSegmentIndex)
     }
 
     val angleThreshold = if (wasSnappedLastTime) SNAP_ANGLE_HYSTERESIS_DEGREES else SNAP_MAX_ANGLE_DIFF_DEGREES
     val diff = angleDiff(userBearing, bestSegmentBearing)
     if (diff > angleThreshold) {
-        return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = false)
+        return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = false, segmentIndex = bestSegmentIndex)
     }
 
-    return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = true)
+    return SnapResult(bestLat, bestLng, bestSegmentBearing.toFloat(), bestDistance, isAccepted = true, segmentIndex = bestSegmentIndex)
 }
 
 @Composable
@@ -464,6 +478,9 @@ fun MapScreen(
     var showGpsLoading by remember { mutableStateOf(false) }
     var lastSnapWasSuccessful by remember { mutableStateOf(false) }
     var lastSnapDistanceMeters by remember { mutableStateOf<Double?>(null) }
+    var suppressSpeedUntilNanos by remember { mutableStateOf(0L) }
+    var displaySpeedKmh by remember { mutableStateOf<Float?>(null) }
+    var traveledSegmentIndex by remember { mutableStateOf(0) }
     var offRouteSinceNanos by remember { mutableStateOf<Long?>(null) }
     var lastRerouteNanos by remember { mutableStateOf(0L) }
     var isRerouting by remember { mutableStateOf(false) }
@@ -509,6 +526,7 @@ fun MapScreen(
         )
         routeAlternatives = results
         selectedRouteIndex = 0
+        traveledSegmentIndex = 0
         isCalculatingRoute = false
 
         if (results.isNotEmpty()) {
@@ -732,7 +750,44 @@ fun MapScreen(
             when (event) {
                 Lifecycle.Event.ON_CREATE -> mapViewRef.onCreate(null)
                 Lifecycle.Event.ON_START -> mapViewRef.onStart()
-                Lifecycle.Event.ON_RESUME -> mapViewRef.onResume()
+                Lifecycle.Event.ON_RESUME -> {
+                    mapViewRef.onResume()
+                    if (selectedDestination != null && routeAlternatives.isNotEmpty()) {
+                        coroutineScope.launch {
+                            val currentLoc = userLocation ?: return@launch
+                            val activeRouteCoords = routeAlternatives.getOrNull(selectedRouteIndex)?.coordinates
+                            val distanceFromRoute = if (activeRouteCoords != null && activeRouteCoords.isNotEmpty()) {
+                                val snap = snapToRoute(currentLoc.latitude, currentLoc.longitude, userHeading, activeRouteCoords, false)
+                                snap?.distanceMeters
+                            } else null
+
+                            val isFarFromRoute = distanceFromRoute == null || distanceFromRoute > OFF_ROUTE_DISTANCE_METERS
+                            if (isFarFromRoute && !isRerouting) {
+                                val destination = selectedDestination ?: return@launch
+                                isRerouting = true
+                                try {
+                                    val results = routingService.getRoutes(
+                                        currentLoc.latitude,
+                                        currentLoc.longitude,
+                                        destination.latitude,
+                                        destination.longitude
+                                    )
+                                    if (results.isNotEmpty()) {
+                                        routeAlternatives = results
+                                        selectedRouteIndex = 0
+                                        labelFractions = emptyMap()
+                                        traveledSegmentIndex = 0
+                                        lastRerouteNanos = System.nanoTime()
+                                    }
+                                } catch (e: Exception) {
+                                } finally {
+                                    isRerouting = false
+                                    offRouteSinceNanos = null
+                                }
+                            }
+                        }
+                    }
+                }
                 Lifecycle.Event.ON_PAUSE -> mapViewRef.onPause()
                 Lifecycle.Event.ON_STOP -> mapViewRef.onStop()
                 Lifecycle.Event.ON_DESTROY -> mapViewRef.onDestroy()
@@ -786,6 +841,8 @@ fun MapScreen(
         } catch (e: Exception) {}
     }
 
+
+
     LaunchedEffect(userLocation) {
         val loc = userLocation ?: return@LaunchedEffect
         if (isActiveTracking) {
@@ -796,6 +853,15 @@ fun MapScreen(
     LaunchedEffect(locationFound, showGpsLoading) {
         if (showGpsLoading && locationFound) {
             showGpsLoading = false
+        }
+    }
+
+    LaunchedEffect(currentSpeed, suppressSpeedUntilNanos) {
+        val now = System.nanoTime()
+        displaySpeedKmh = when {
+            currentSpeed == null -> null
+            now < suppressSpeedUntilNanos -> 0f
+            else -> currentSpeed
         }
     }
 
@@ -830,22 +896,28 @@ fun MapScreen(
             val timeFormatted = when {
                 hours > 0 && remainingMinutes > 0 -> "${hours}h ${remainingMinutes}m"
                 hours > 0 -> "${hours}h"
-                else -> "${totalMinutes} min"
+                remainingMinutes > 0 -> "${remainingMinutes} min"
+                else -> "1 min"
             }
-            val km = String.format("%.0f km", route.distanceMeters / 1000.0)
+            val km = formatDistance(route.distanceMeters)
             return Pair(timeFormatted, km)
         }
-
         routeAlternatives.forEachIndexed { index, route ->
             if (route.coordinates.isEmpty()) return@forEachIndexed
-            val points = route.coordinates.map { Point.fromLngLat(it.second, it.first) }
+            val visibleCoordinates = if (isActiveTracking && index == selectedRouteIndex) {
+                route.coordinates.drop(traveledSegmentIndex)
+            } else {
+                route.coordinates
+            }
+            if (visibleCoordinates.isEmpty()) return@forEachIndexed
+            val points = visibleCoordinates.map { Point.fromLngLat(it.second, it.first) }
             val lineString = LineString.fromLngLats(points)
             val feature = Feature.fromGeometry(lineString)
             feature.addBooleanProperty("isSelected", index == selectedRouteIndex)
             feature.addNumberProperty("routeIndex", index)
 
             val fraction = labelFractions[index] ?: 0.5
-            val mid = pointAtFraction(route.coordinates, fraction)
+            val mid = pointAtFraction(visibleCoordinates, fraction)
 
             if (index == selectedRouteIndex) {
                 selectedFeature = feature
@@ -955,7 +1027,9 @@ fun MapScreen(
 
         lastSnapWasSuccessful = snapResult?.isAccepted == true
         lastSnapDistanceMeters = snapResult?.distanceMeters
-
+        if (snapResult?.isAccepted == true) {
+            traveledSegmentIndex = maxOf(traveledSegmentIndex, snapResult.segmentIndex)
+        }
         val effectiveLat = if (snapResult?.isAccepted == true) snapResult.lat else loc.latitude
         val effectiveLng = if (snapResult?.isAccepted == true) snapResult.lng else loc.longitude
 
@@ -970,7 +1044,7 @@ fun MapScreen(
         if (!didInitialZoom) {
             didInitialZoom = true
             locationFound = true
-            animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = true)
+            animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed ?: 0f, forceSnap = true)
             pushUserGeoJson(effectiveLat, effectiveLng, targetRotation, force = true)
             map.animateCamera(
                 CameraUpdateFactory.newCameraPosition(
@@ -984,7 +1058,7 @@ fun MapScreen(
                 ), 1000
             )
         } else if (!isActiveTracking) {
-            animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = true)
+            animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed ?: 0f, forceSnap = true)
             pushUserGeoJson(effectiveLat, effectiveLng, targetRotation, force = true)
         } else {
             val startLatLng = LatLng(animator.renderedPos.value.lat, animator.renderedPos.value.lng)
@@ -992,7 +1066,8 @@ fun MapScreen(
             val jumpDistanceMeters = startLatLng.distanceTo(targetLatLng)
 
             if (jumpDistanceMeters > 300.0 || isTransitioningToTracking) {
-                animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = true)
+                suppressSpeedUntilNanos = System.nanoTime() + 3_000_000_000L
+                animator.updateFix(effectiveLat, effectiveLng, targetRotation, 0f, forceSnap = true)
                 pushUserGeoJson(effectiveLat, effectiveLng, targetRotation, force = true)
                 if (!isTransitioningToTracking) {
                     map.moveCamera(
@@ -1008,60 +1083,89 @@ fun MapScreen(
                     )
                 }
             } else {
-                animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed, forceSnap = false)
+                animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed ?: 0f, forceSnap = false)
             }
         }
     }
 
-    LaunchedEffect(lastSnapWasSuccessful, lastSnapDistanceMeters, isActiveTracking) {
-        if (!isActiveTracking) {
-            offRouteSinceNanos = null
-            return@LaunchedEffect
-        }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(1000L)
 
-        val distance = lastSnapDistanceMeters
-        val isOffRoute = !lastSnapWasSuccessful && distance != null && distance > OFF_ROUTE_DISTANCE_METERS
-
-        if (!isOffRoute) {
-            offRouteSinceNanos = null
-            return@LaunchedEffect
-        }
-
-        if (offRouteSinceNanos == null) {
-            offRouteSinceNanos = System.nanoTime()
-        }
-
-        delay(OFF_ROUTE_REROUTE_DELAY_NANOS / 1_000_000L)
-
-        val startedAt = offRouteSinceNanos ?: return@LaunchedEffect
-        val elapsed = System.nanoTime() - startedAt
-        if (elapsed < OFF_ROUTE_REROUTE_DELAY_NANOS) return@LaunchedEffect
-
-        val now = System.nanoTime()
-        if (now - lastRerouteNanos < REROUTE_COOLDOWN_NANOS) return@LaunchedEffect
-        if (isRerouting) return@LaunchedEffect
-
-        val destination = selectedDestination ?: return@LaunchedEffect
-        val currentLoc = userLocation ?: return@LaunchedEffect
-
-        isRerouting = true
-        lastRerouteNanos = now
-        try {
-            val results = routingService.getRoutes(
-                currentLoc.latitude,
-                currentLoc.longitude,
-                destination.latitude,
-                destination.longitude
-            )
-            if (results.isNotEmpty()) {
-                routeAlternatives = results
-                selectedRouteIndex = 0
-                labelFractions = emptyMap()
+            if (!isActiveTracking) {
+                offRouteSinceNanos = null
+                continue
             }
-        } catch (e: Exception) {
-        } finally {
-            isRerouting = false
-            offRouteSinceNanos = null
+
+            val distance = lastSnapDistanceMeters
+            val isOffRoute = !lastSnapWasSuccessful && distance != null && distance > OFF_ROUTE_DISTANCE_METERS
+
+            if (!isOffRoute) {
+                offRouteSinceNanos = null
+                continue
+            }
+
+            if (offRouteSinceNanos == null) {
+                offRouteSinceNanos = System.nanoTime()
+                continue
+            }
+
+            val startedAt = offRouteSinceNanos ?: continue
+            val elapsed = System.nanoTime() - startedAt
+            if (elapsed < OFF_ROUTE_REROUTE_DELAY_NANOS) continue
+
+            val now = System.nanoTime()
+            if (now - lastRerouteNanos < REROUTE_COOLDOWN_NANOS) continue
+            if (isRerouting) continue
+
+            val destination = selectedDestination ?: continue
+            val currentLoc = userLocation ?: continue
+
+            isRerouting = true
+            lastRerouteNanos = now
+            try {
+                val results = routingService.getRoutes(
+                    currentLoc.latitude,
+                    currentLoc.longitude,
+                    destination.latitude,
+                    destination.longitude
+                )
+                if (results.isNotEmpty()) {
+                    routeAlternatives = results
+                    selectedRouteIndex = 0
+                    labelFractions = emptyMap()
+                    traveledSegmentIndex = 0
+                }
+            } catch (e: Exception) {
+            } finally {
+                isRerouting = false
+                offRouteSinceNanos = null
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(1000L)
+
+            if (!isActiveTracking) continue
+
+            val destination = selectedDestination ?: continue
+            val currentLoc = userLocation ?: continue
+
+            val destLocation = Location("dest").apply {
+                latitude = destination.latitude
+                longitude = destination.longitude
+            }
+            val userLoc = Location("user").apply {
+                latitude = currentLoc.latitude
+                longitude = currentLoc.longitude
+            }
+            val distanceToDestination = userLoc.distanceTo(destLocation)
+
+            if (distanceToDestination <= ARRIVAL_DISTANCE_METERS) {
+                clearRoute()
+            }
         }
     }
 
@@ -1633,10 +1737,11 @@ fun MapScreen(
                                 val timeFormatted = when {
                                     hours > 0 && remainingMinutes > 0 -> "${hours}h ${remainingMinutes}m"
                                     hours > 0 -> "${hours}h"
-                                    else -> "${totalMinutes} min"
+                                    remainingMinutes > 0 -> "${remainingMinutes} min"
+                                    else -> "1 min"
                                 }
 
-                                val km = String.format("%.0f km", route.distanceMeters / 1000.0)
+                                val km = formatDistance(route.distanceMeters)
                                 val eta = java.time.LocalTime.now().plusSeconds(route.durationSeconds.toLong())
                                 val etaFormatted = eta.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
 
@@ -1690,7 +1795,7 @@ fun MapScreen(
                 SpeedOverlay(
                     isInRadarZone = isInRadarZone,
                     speedLimitInZone = speedLimitInZone,
-                    currentSpeed = currentSpeed,
+                    currentSpeed = displaySpeedKmh,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(

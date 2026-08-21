@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
 fun SpeedOverlay(
     isInRadarZone: Boolean,
     speedLimitInZone: Int,
-    currentSpeed: Float,
+    currentSpeed: Float?,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -52,7 +52,7 @@ fun SpeedOverlay(
                 .padding(horizontal = 14.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
-            val speedDisplayColor = if (isInRadarZone) {
+            val speedDisplayColor = if (isInRadarZone && currentSpeed != null) {
                 val diff = currentSpeed - speedLimitInZone
                 when {
                     diff <= 0 -> Color.White
@@ -65,7 +65,7 @@ fun SpeedOverlay(
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "${currentSpeed.toInt()}",
+                    text = currentSpeed?.let { "${it.toInt()}" } ?: "--",
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Black,
                     color = speedDisplayColor

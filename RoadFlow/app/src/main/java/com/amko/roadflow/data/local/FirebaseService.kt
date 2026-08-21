@@ -258,7 +258,6 @@ class FirebaseService {
                 }
             }
         } catch (e: Exception) {
-            println("[FirebaseService] History error: ${e.message}")
         }
 
         radars
@@ -370,11 +369,8 @@ class FirebaseService {
                 .build()
 
             val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                println("[FirebaseService] Podaci uspješno merge-ovani u history za datum: $dateStr (ukupno: ${merged.size})")
-            }
+
         } catch (e: Exception) {
-            println("[FirebaseService] Greška pri slanju u history: ${e.message}")
         }
     }
 }
