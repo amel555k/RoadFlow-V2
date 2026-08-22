@@ -71,7 +71,7 @@
             android:name=".presentation.widget.FavoriteCitiesWidgetReceiver"
             android:enabled="true"
             android:exported="true"
-            android:label="RoadFlow Fav cities">
+            android:label="RoadFlow - lista za dva grada">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

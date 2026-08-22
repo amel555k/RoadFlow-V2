@@ -43,7 +43,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amko.roadflow.R
 import com.amko.roadflow.domain.model.Canton
 import com.amko.roadflow.domain.model.RadarData
-import com.amko.roadflow.presentation.components.AppAlertDialog
 import com.amko.roadflow.presentation.components.BottomNavBar
 import com.amko.roadflow.presentation.components.CantonPickerDropdown
 import com.amko.roadflow.presentation.components.NoConnectionDialog
@@ -70,8 +69,6 @@ fun MainScreen(
     val showNoInternet by viewModel.showNoInternet.collectAsState()
     val currentDate by viewModel.currentDate.collectAsState()
     val hasError by viewModel.hasError.collectAsState()
-    val currentAlert by viewModel.currentAlert.collectAsState()
-
     android.util.Log.d("ROADFLOW1", "MainScreen recompose: flatList.size=${flatList.size} isLoading=$isLoading")
     val cityList = remember {
         com.amko.roadflow.data.local.RadarConfig.locations
@@ -351,16 +348,8 @@ fun MainScreen(
             )
         }
 
-        currentAlert?.let { alert ->
-            AppAlertDialog(
-                message = alert.poruka,
-                onDismiss = {
-                    viewModel.dismissAlert(alert.alertId)
-                }
-            )
         }
     }
-}
 
 @Composable
 fun ThemeSwitch(
@@ -497,10 +486,10 @@ fun RefreshIndicatorWithSuccess(
         if (showSuccess) {
             Box(
                 modifier = Modifier
-                    .width(capsuleWidth)
                     .height(capsuleHeight)
                     .clip(RoundedCornerShape(cornerRadius))
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(

@@ -19,7 +19,7 @@
     <shortcut
         android:shortcutId="open_history"
         android:enabled="true"
-        android:icon="@drawable/ic_proba"
+        android:icon="@drawable/ic_shortcut_calendar"
         android:shortcutShortLabel="@string/shortcut_history_short"
         android:shortcutLongLabel="@string/shortcut_history_long">
         <intent

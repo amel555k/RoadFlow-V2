@@ -441,6 +441,13 @@ class RadarParser(
         return parseFileContent(fileContent)
     }
 
+    suspend fun getActiveRadarsForCitiesAsync(cities: List<String>): List<RadarData> {
+        val fileContent = readFromFileAsync()
+        if (fileContent.isBlank()) return emptyList()
+        val citiesSet = cities.filter { it.isNotBlank() }.toHashSet()
+        return parseFileContent(fileContent).filter { citiesSet.contains(it.city) && it.time != "INFO" }
+    }
+
     suspend fun getExpandedRadarsForMapAsync(): List<RadarData> {
         val fileContent = readFromFileAsync()
         if (fileContent.isBlank()) return emptyList()

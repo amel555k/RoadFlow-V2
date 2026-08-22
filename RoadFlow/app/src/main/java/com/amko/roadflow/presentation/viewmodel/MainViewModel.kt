@@ -3,15 +3,12 @@ package com.amko.roadflow.presentation.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.amko.roadflow.data.domain.model.AppAlert
 import com.amko.roadflow.data.local.FirebaseService
 import com.amko.roadflow.data.local.NoInternetWithCacheException
 import com.amko.roadflow.data.local.RadarConfig
 import com.amko.roadflow.data.local.RadarParser
 import com.amko.roadflow.domain.model.Canton
 import com.amko.roadflow.domain.model.RadarData
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,16 +25,12 @@ sealed class RadarListItem {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val firebaseService = FirebaseService()
     private val parser = RadarParser(application, firebaseService)
-    private val firestore = FirebaseFirestore.getInstance()
 
     private val prefs = application.getSharedPreferences("roadflow_prefs", Application.MODE_PRIVATE)
 
     private val _allRadars = MutableStateFlow<List<RadarData>>(emptyList())
     private val _displayedRadars = MutableStateFlow<List<RadarData>>(emptyList())
     val displayedRadars: StateFlow<List<RadarData>> = _displayedRadars
-
-    private val _currentAlert = MutableStateFlow<AppAlert?>(null)
-    val currentAlert: StateFlow<AppAlert?> = _currentAlert
 
     val isLoading = MutableStateFlow(true)
     val showNoInternet = MutableStateFlow(false)
@@ -118,41 +111,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             currentDate.value = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate()
             loadData()
-            fetchAppAlert()
         }
     }
 
-    private fun fetchAppAlert() {
-        firestore.collection("alerts").document("global_alert")
-            .get()
-            .addOnSuccessListener { document ->
-                if (document != null && document.exists()) {
-                    val poruka = document.getString("poruka") ?: "null"
-                    val alertId = document.getString("alert_id") ?: "0"
-                    val counter = document.getLong("counter") ?: 0L
 
-                    if (poruka != "null" && poruka.isNotBlank()) {
-                        val savedAlertId = prefs.getString("saved_alert_id", "-1")
-
-                        if (savedAlertId != alertId) {
-                            _currentAlert.value = AppAlert(poruka, alertId, counter)
-                        }
-                    }
-                }
-            }
-            .addOnFailureListener {
-                // Tihi failure u slucaju greske sa mrezom
-            }
-    }
-
-    fun dismissAlert(alertId: String) {
-        prefs.edit().putString("saved_alert_id", alertId).apply()
-
-        firestore.collection("alerts").document("global_alert")
-            .update("counter", FieldValue.increment(1))
-
-        _currentAlert.value = null
-    }
 
     fun filterForCanton(all: List<RadarData>, canton: Canton?): List<RadarData> {
         if (canton == null) return all

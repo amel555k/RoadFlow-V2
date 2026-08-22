@@ -17,12 +17,17 @@ class RoutingService {
     private val client = OkHttpClient()
     private val baseUrl = Secrets.OSRM_URL
 
-    suspend fun getRoutes(startLat: Double, startLng: Double, endLat: Double, endLng: Double): List<RouteResult> {
+    suspend fun getRoutes(startLat: Double, startLng: Double, endLat: Double, endLng: Double, startBearing: Double? = null): List<RouteResult> {
         return withContext(Dispatchers.IO) {
             try {
-                val url = "$baseUrl/$startLng,$startLat;$endLng,$endLat?geometries=geojson&overview=full&alternatives=3"
+                val bearingsParam = if (startBearing != null) {
+                    val normalized = ((startBearing % 360.0) + 360.0) % 360.0
+                    "&bearings=${normalized.toInt()},45;0,180"
+                } else {
+                    ""
+                }
+                val url = "$baseUrl/$startLng,$startLat;$endLng,$endLat?geometries=geojson&overview=full&alternatives=3$bearingsParam"
                 val request = Request.Builder().url(url).build()
-
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@withContext emptyList()
                     val body = response.body?.string() ?: return@withContext emptyList()
@@ -67,7 +72,7 @@ class RoutingService {
         }
     }
 
-    suspend fun getRoute(startLat: Double, startLng: Double, endLat: Double, endLng: Double): RouteResult? {
-        return getRoutes(startLat, startLng, endLat, endLng).firstOrNull()
+    suspend fun getRoute(startLat: Double, startLng: Double, endLat: Double, endLng: Double, startBearing: Double? = null): RouteResult? {
+        return getRoutes(startLat, startLng, endLat, endLng, startBearing).firstOrNull()
     }
 }

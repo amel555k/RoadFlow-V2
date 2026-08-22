@@ -18,11 +18,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.glance.appwidget.updateAll
 import com.amko.roadflow.R
 import com.amko.roadflow.data.local.RadarConfig
 import com.amko.roadflow.presentation.components.AppDropdown
 import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 @Composable
 fun WidgetSettingsScreen(
@@ -34,6 +36,7 @@ fun WidgetSettingsScreen(
     val saveMessage = remember { mutableStateOf("") }
     val expandedCity1 = remember { mutableStateOf(false) }
     val expandedCity2 = remember { mutableStateOf(false) }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     BackHandler(enabled = expandedCity1.value || expandedCity2.value) {
         expandedCity1.value = false
@@ -184,18 +187,13 @@ fun WidgetSettingsScreen(
 
                             WidgetStateManager.updateCities(selectedCities.value.first, selectedCities.value.second)
 
-                            val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
-                            val componentName = android.content.ComponentName(
-                                context,
-                                com.amko.roadflow.presentation.widget.FavoriteCitiesWidgetReceiver::class.java
-                            )
-                            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                            if (appWidgetIds.isNotEmpty()) {
-                                val intent = android.content.Intent(context, com.amko.roadflow.presentation.widget.FavoriteCitiesWidgetReceiver::class.java).apply {
-                                    action = android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                                    putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, appWidgetIds)
-                                }
-                                context.sendBroadcast(intent)
+                            coroutineScope.launch {
+                                WidgetStateManager.syncWidgetCacheFromMainCache(
+                                    context,
+                                    selectedCities.value.first,
+                                    selectedCities.value.second
+                                )
+                                com.amko.roadflow.presentation.widget.FavoriteCitiesWidget().updateAll(context)
                             }
 
                             initialCities.value = selectedCities.value
@@ -233,6 +231,19 @@ object WidgetStateManager {
     fun updateCities(newCity1: String, newCity2: String) {
         city1Flow.value = newCity1
         city2Flow.value = newCity2
+    }
+
+    suspend fun syncWidgetCacheFromMainCache(
+        context: android.content.Context,
+        city1: String,
+        city2: String
+    ) {
+        val parser = com.amko.roadflow.data.local.RadarParser(context, com.amko.roadflow.data.local.FirebaseService())
+        val radars = parser.getActiveRadarsForCitiesAsync(listOf(city1, city2))
+
+        val file = java.io.File(context.filesDir, "widget.txt")
+        val content = radars.joinToString("\n") { "${it.city}|${it.time}|${it.location}" }
+        file.writeText(content)
     }
 
     fun resolveDefaultCities(context: android.content.Context): Pair<String, String> {
