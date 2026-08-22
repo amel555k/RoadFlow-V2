@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,6 +32,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
+import org.json.JSONObject
 import org.maplibre.android.geometry.LatLng
 
 data class SearchResult(
@@ -51,6 +53,53 @@ private fun shortenLocationName(fullName: String): String {
     }
 }
 
+private const val RECENT_LOCATIONS_PREFS = "roadflow_prefs"
+private const val RECENT_LOCATIONS_KEY = "recent_search_locations"
+private const val MAX_RECENT_LOCATIONS = 3
+
+private fun loadRecentLocations(context: android.content.Context): List<SearchResult> {
+    val prefs = context.getSharedPreferences(RECENT_LOCATIONS_PREFS, android.content.Context.MODE_PRIVATE)
+    val raw = prefs.getString(RECENT_LOCATIONS_KEY, null) ?: return emptyList()
+
+    return try {
+        val jsonArray = JSONArray(raw)
+        val results = mutableListOf<SearchResult>()
+        for (i in 0 until jsonArray.length()) {
+            val item = jsonArray.getJSONObject(i)
+            results.add(
+                SearchResult(
+                    displayName = item.optString("displayName"),
+                    lat = item.optDouble("lat"),
+                    lon = item.optDouble("lon")
+                )
+            )
+        }
+        results
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
+private fun saveRecentLocation(context: android.content.Context, result: SearchResult) {
+    val prefs = context.getSharedPreferences(RECENT_LOCATIONS_PREFS, android.content.Context.MODE_PRIVATE)
+    val existing = loadRecentLocations(context).toMutableList()
+
+    existing.removeAll { it.displayName == result.displayName }
+    existing.add(0, result)
+    val trimmed = existing.take(MAX_RECENT_LOCATIONS)
+
+    val jsonArray = JSONArray()
+    trimmed.forEach { item ->
+        val obj = JSONObject()
+        obj.put("displayName", item.displayName)
+        obj.put("lat", item.lat)
+        obj.put("lon", item.lon)
+        jsonArray.put(obj)
+    }
+
+    prefs.edit().putString(RECENT_LOCATIONS_KEY, jsonArray.toString()).apply()
+}
+
 @Composable
 fun LocationSearchBar(
     onLocationSelected: (LatLng, String) -> Unit,
@@ -63,11 +112,13 @@ fun LocationSearchBar(
     onPickOnMapCancel: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var isExpanded by remember { mutableStateOf(false) }
     var expandedFromSelection by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+    var recentLocations by remember { mutableStateOf(loadRecentLocations(context)) }
 
     LaunchedEffect(query) {
         if (query.trim().length < 3) {
@@ -266,6 +317,48 @@ fun LocationSearchBar(
 
                     HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
 
+                    if (query.isEmpty() && recentLocations.isNotEmpty()) {
+                        Column {
+                            recentLocations.forEach { recent ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onLocationSelected(
+                                                LatLng(recent.lat, recent.lon),
+                                                recent.displayName
+                                            )
+                                            saveRecentLocation(context, recent)
+                                            recentLocations = loadRecentLocations(context)
+                                            isExpanded = false
+                                            expandedFromSelection = false
+                                            onExpandedChange(false)
+                                            query = ""
+                                            searchResults = emptyList()
+                                        }
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.History,
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = shortenLocationName(recent.displayName),
+                                        fontSize = 13.sp,
+                                        color = Color.Black,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                HorizontalDivider(color = Color.LightGray.copy(alpha = 0.3f))
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -308,6 +401,8 @@ fun LocationSearchBar(
                                                     LatLng(result.lat, result.lon),
                                                     result.displayName
                                                 )
+                                                saveRecentLocation(context, result)
+                                                recentLocations = loadRecentLocations(context)
                                                 isExpanded = false
                                                 expandedFromSelection = false
                                                 onExpandedChange(false)
@@ -342,7 +437,6 @@ fun LocationSearchBar(
         }
     }
 }
-
 private suspend fun searchLocations(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
     val client = OkHttpClient()
     val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")

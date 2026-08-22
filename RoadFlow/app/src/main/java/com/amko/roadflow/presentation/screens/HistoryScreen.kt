@@ -150,6 +150,7 @@ fun HistoryScreen(
         if (showDayOverlay) {
             DayDetailsOverlay(
                 selectedDate = selectedDate,
+                today = today,
                 uiList = uiList,
                 isLoading = isLoading,
                 selectedCanton = selectedCanton,
@@ -162,6 +163,12 @@ fun HistoryScreen(
                     isDropdownOpen = false
                 },
                 onDismissDropdown = { isDropdownOpen = false },
+                onPrevDay = {
+                    selectedDate?.let { viewModel.selectDate(it.minusDays(1)) }
+                },
+                onNextDay = {
+                    selectedDate?.let { viewModel.selectDate(it.plusDays(1)) }
+                },
                 onClose = {
                     showDayOverlay = false
                     isDropdownOpen = false
@@ -182,6 +189,7 @@ fun HistoryScreen(
 @Composable
 private fun DayDetailsOverlay(
     selectedDate: LocalDate?,
+    today: LocalDate,
     uiList: List<RadarListItem>,
     isLoading: Boolean,
     selectedCanton: Canton?,
@@ -191,6 +199,8 @@ private fun DayDetailsOverlay(
     onDropdownToggle: () -> Unit,
     onCantonSelected: (Canton?) -> Unit,
     onDismissDropdown: () -> Unit,
+    onPrevDay: () -> Unit,
+    onNextDay: () -> Unit,
     onClose: () -> Unit
 ) {
     Box(
@@ -208,25 +218,43 @@ private fun DayDetailsOverlay(
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.primary)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Nazad",
-                    tint = MaterialTheme.colorScheme.onPrimary,
+                Box(
                     modifier = Modifier
-                        .padding(end = 16.dp)
-                        .clickable { onClose() }
-                )
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = selectedDate?.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) ?: "",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onPrevDay() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowLeft,
+                        contentDescription = "Prethodni dan",
+                        tint = MaterialTheme.colorScheme.onPrimary
                     )
                 }
-                Spacer(modifier = Modifier.width(24.dp))
+                Text(
+                    text = selectedDate?.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) ?: "",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                val isNextEnabled = selectedDate != null && selectedDate.isBefore(today)
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = isNextEnabled) { onNextDay() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Sljedeći dan",
+                        tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = if (isNextEnabled) 1f else 0.3f)
+                    )
+                }
             }
 
             Row(

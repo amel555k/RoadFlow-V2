@@ -119,7 +119,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    enum class RadarFilter { ACTIVE, TODAY, ALL }
+    enum class RadarFilter { ACTIVE, TODAY }
 
     fun setFilter(filter: RadarFilter) {
         _selectedFilter.value = filter
@@ -138,8 +138,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             RadarFilter.TODAY -> _allRadars.value.filter {
                 it.time != "INFO"
             } + getStacionarni()
-
-            RadarFilter.ALL -> getAllConfigRadars()
         }
         android.util.Log.d(
             "RadarMarkers",
@@ -194,19 +192,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         .map { coord ->
             RadarData(
                 city = coord.mainName,
-                time = "00:00 do 24:00",
-                location = coord.mainName,
-                latitude = coord.latitude,
-                longitude = coord.longitude,
-                speedLimit = coord.speedLimit,
-                coordinate = coord
-            )
-        }
-
-    private fun getAllConfigRadars() = RadarConfig.coordinates
-        .map { coord ->
-            RadarData(
-                city = coord.city ?: coord.mainName,
                 time = "00:00 do 24:00",
                 location = coord.mainName,
                 latitude = coord.latitude,

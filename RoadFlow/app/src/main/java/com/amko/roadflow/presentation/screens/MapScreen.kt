@@ -1523,12 +1523,6 @@ fun MapScreen(
                             isActive = selectedFilter == MapViewModel.RadarFilter.ACTIVE,
                             onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ACTIVE) }
                         )
-
-                        FilterButton(
-                            text = "SVI",
-                            isActive = selectedFilter == MapViewModel.RadarFilter.ALL,
-                            onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ALL) }
-                        )
                     }
 
                     if (didInitialZoom && locationFound && isGpsEnabled) {
@@ -1573,11 +1567,6 @@ fun MapScreen(
                             text = "DANAS",
                             isActive = selectedFilter == MapViewModel.RadarFilter.TODAY,
                             onClick = { viewModel.setFilter(MapViewModel.RadarFilter.TODAY) }
-                        )
-                        FilterButton(
-                            text = "SVI",
-                            isActive = selectedFilter == MapViewModel.RadarFilter.ALL,
-                            onClick = { viewModel.setFilter(MapViewModel.RadarFilter.ALL) }
                         )
                     }
                 }

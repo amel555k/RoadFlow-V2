@@ -291,7 +291,7 @@ fun SplashScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "© 2026 Amel Kolasević sva prava zadržana| ",
+                        text = "© 2026 Amel Kolasević sva prava zadržana | ",
                         fontSize = 11.sp,
                         color = Color(0xFFE4ECF5).copy(alpha = 0.6f)
                     )

@@ -30,3 +30,18 @@
     public static int e(...);
     public static int wtf(...);
 }
+-keep class com.google.firebase.** { *; }
+-dontwarn com.google.firebase.**
+-keep class com.google.android.gms.** { *; }
+-dontwarn com.google.android.gms.**
+
+-keep class com.amko.roadflow.data.** { *; }
+-keepclassmembers class com.amko.roadflow.data.** { *; }
+
+-keepattributes *Annotation*,Signature,InnerClasses
+-keepclassmembers class * {
+    @com.google.firebase.database.PropertyName <fields>;
+}
+
+# --- Coroutines ---
+-keepclassmembers class * extends kotlinx.coroutines.AbstractCoroutine { *; }

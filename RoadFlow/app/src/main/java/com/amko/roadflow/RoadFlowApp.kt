@@ -10,8 +10,8 @@ import com.amko.roadflow.data.local.CoordinateRepository
 import com.amko.roadflow.data.local.FirebaseService
 import com.amko.roadflow.data.local.RadarConfig
 import com.google.firebase.FirebaseApp
+import com.google.firebase.appcheck.AppCheckProviderFactory
 import com.google.firebase.appcheck.FirebaseAppCheck
-import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,10 +33,16 @@ class RoadFlowApp : Application() {
 
         FirebaseApp.initializeApp(this)
         val firebaseAppCheck = FirebaseAppCheck.getInstance()
+
         if (BuildConfig.DEBUG) {
-            firebaseAppCheck.installAppCheckProviderFactory(
-                DebugAppCheckProviderFactory.getInstance()
-            )
+            try {
+                val debugFactoryClass = Class.forName("com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory")
+                val getInstanceMethod = debugFactoryClass.getMethod("getInstance")
+                val debugFactory = getInstanceMethod.invoke(null) as AppCheckProviderFactory
+                firebaseAppCheck.installAppCheckProviderFactory(debugFactory)
+            } catch (e: Exception) {
+                Log.e("RoadFlowApp", "Greska pri inicijalizaciji DebugAppCheck: ${e.message}")
+            }
         } else {
             firebaseAppCheck.installAppCheckProviderFactory(
                 PlayIntegrityAppCheckProviderFactory.getInstance()
