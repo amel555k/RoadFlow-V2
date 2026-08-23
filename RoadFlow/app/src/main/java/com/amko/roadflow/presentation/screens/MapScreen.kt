@@ -507,6 +507,7 @@ fun MapScreen(
     var selectedRouteIndex by remember { mutableStateOf(0) }
     val currentRouteResult: RouteResult? = routeAlternatives.getOrNull(selectedRouteIndex)
     var labelFractions by remember { mutableStateOf<Map<Int, Double>>(emptyMap()) }
+    var isRouteCardExpanded by remember { mutableStateOf(true) }
 
     var selectedDestination by remember { mutableStateOf<LatLng?>(null) }
     var selectedDestinationName by remember { mutableStateOf<String?>(null) }
@@ -1486,9 +1487,15 @@ fun MapScreen(
                     currentSpeedKmh = currentSpeed,
                     traveledSegmentIndex = traveledSegmentIndex,
                     isLandscape = isLandscape,
+                    isExpanded = isRouteCardExpanded,
+                    onExpandedChange = { isRouteCardExpanded = it },
                     onClearRoute = { clearRoute() },
-                    modifier = Modifier.align(Alignment.TopCenter),
-                    startPadding = if (isLandscape) 40.dp else 16.dp,
+                    modifier = Modifier.align(
+                        if (isLandscape && isRouteCardExpanded) Alignment.TopStart
+                        else if (isRouteCardExpanded) Alignment.TopCenter
+                        else Alignment.TopStart
+                    ),
+                    startPadding = if (isLandscape) 16.dp else 16.dp,
                     endPadding = if (isLandscape) 180.dp else 16.dp
                 )
             }

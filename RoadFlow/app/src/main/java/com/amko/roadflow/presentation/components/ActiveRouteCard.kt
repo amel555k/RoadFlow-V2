@@ -1,5 +1,7 @@
 package com.amko.roadflow.presentation.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -7,14 +9,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,6 +80,7 @@ private fun remainingDistanceMeters(
     }
 
     return total
+
 }
 
 @Composable
@@ -86,6 +93,8 @@ fun ActiveRouteCard(
     currentSpeedKmh: Float?,
     traveledSegmentIndex: Int,
     isLandscape: Boolean,
+    isExpanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onClearRoute: () -> Unit,
     modifier: Modifier = Modifier,
     startPadding: Dp = 16.dp,
@@ -160,110 +169,184 @@ fun ActiveRouteCard(
         }
     }
 
+    val effectiveDistanceMeters = currentRouteResult?.let { route ->
+        if (isActiveTracking) remainingDistanceMetersState ?: route.distanceMeters
+        else route.distanceMeters
+    }
+
+    val topPadding = if (isLandscape) 8.dp else 20.dp
+    val sideStartPadding = if (isExpanded) startPadding else 12.dp
+    val sideEndPadding = if (isExpanded) endPadding else 12.dp
+
     Box(
         modifier = modifier
-            .padding(top = 20.dp, start = startPadding, end = endPadding)
-            .fillMaxWidth()
+            .padding(top = topPadding, start = sideStartPadding, end = sideEndPadding)
+            .let {
+                if (isExpanded) {
+                    if (isLandscape) it.widthIn(max = 400.dp) else it.fillMaxWidth()
+                } else {
+                    it.wrapContentWidth()
+                }
+            }
     ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF4D7079)),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .let {
+                    if (isExpanded) {
+                        if (isLandscape) it.widthIn(max = 400.dp) else it.fillMaxWidth()
+                    } else {
+                        it.wrapContentWidth()
+                    }
+                }
+                .animateContentSize(animationSpec = tween(durationMillis = 250))
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isCalculatingRoute) {
-                    Row(
-                        modifier = Modifier.width(0.dp).weight(1f),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Izračunavam...",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = if (isLandscape) 20.sp else 16.sp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+            if (!isExpanded) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isCalculatingRoute) {
                         CircularProgressIndicator(
-                            modifier = Modifier.width(if (isLandscape) 22.dp else 18.dp),
+                            modifier = Modifier.width(14.dp),
                             color = Color.White,
                             strokeWidth = 2.dp
                         )
-                    }
-                } else if (currentRouteResult != null) {
-                    val route = currentRouteResult
-                    val effectiveDistanceMeters = if (isActiveTracking) {
-                        remainingDistanceMetersState ?: route.distanceMeters
                     } else {
-                        route.distanceMeters
+                        Text(
+                            text = effectiveDistanceMeters?.let { formatDistance(it) } ?: "--",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
                     }
-                    val effectiveDurationSeconds = if (isActiveTracking) {
-                        remainingDurationSeconds ?: route.durationSeconds
-                    } else {
-                        route.durationSeconds
-                    }
-
-                    val totalMinutes = (effectiveDurationSeconds / 60).toInt()
-                    val hours = totalMinutes / 60
-                    val remainingMinutes = totalMinutes % 60
-
-                    val timeFormatted = when {
-                        hours > 0 && remainingMinutes > 0 -> "${hours}h ${remainingMinutes}m"
-                        hours > 0 -> "${hours}h"
-                        remainingMinutes > 0 -> "${remainingMinutes} min"
-                        else -> "1 min"
-                    }
-
-                    val km = formatDistance(effectiveDistanceMeters)
-                    val eta = LocalTime.now().plusSeconds(effectiveDurationSeconds.toLong())
-                    val etaFormatted = eta.format(DateTimeFormatter.ofPattern("HH:mm"))
-
-                    val infoFontSize = if (isLandscape) 20.sp else 16.sp
-
-                    Text(
-                        text = km,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = infoFontSize,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = timeFormatted,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = infoFontSize,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = etaFormatted,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = infoFontSize,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f)
-                    )
-
+                    Spacer(modifier = Modifier.width(4.dp))
                     IconButton(
-                        onClick = onClearRoute,
-                        modifier = Modifier.width(if (isLandscape) 32.dp else 28.dp)
+                        onClick = { onExpandedChange(true) },
+                        modifier = Modifier.width(22.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Ukloni rutu",
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Prosiri",
                             tint = Color.White,
-                            modifier = Modifier.width(if (isLandscape) 22.dp else 18.dp)
+                            modifier = Modifier.width(16.dp)
                         )
+                    }
+                }
+            } else {
+                val verticalPadding = if (isLandscape) 4.dp else 10.dp
+                val horizontalPadding = if (isLandscape) 8.dp else 12.dp
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { onExpandedChange(false) },
+                        modifier = Modifier.width(22.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowLeft,
+                            contentDescription = "Suzi",
+                            tint = Color.White,
+                            modifier = Modifier.width(16.dp)
+                        )
+                    }
+
+                    if (isCalculatingRoute) {
+                        Row(
+                            modifier = Modifier.width(0.dp).weight(1f),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Izračunavam...",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = if (isLandscape) 14.sp else 14.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.width(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else if (currentRouteResult != null) {
+                        val route = currentRouteResult
+                        val effectiveDurationSeconds = if (isActiveTracking) {
+                            remainingDurationSeconds ?: route.durationSeconds
+                        } else {
+                            route.durationSeconds
+                        }
+
+                        val totalMinutes = (effectiveDurationSeconds / 60).toInt()
+                        val hours = totalMinutes / 60
+                        val remainingMinutes = totalMinutes % 60
+
+                        val timeFormatted = when {
+                            hours > 0 && remainingMinutes > 0 -> "${hours}h${remainingMinutes}m"
+                            hours > 0 -> "${hours}h"
+                            remainingMinutes > 0 -> "${remainingMinutes} min"
+                            else -> "1 min"
+                        }
+
+                        val km = effectiveDistanceMeters?.let { formatDistance(it) } ?: "--"
+                        val eta = LocalTime.now().plusSeconds(effectiveDurationSeconds.toLong())
+                        val etaFormatted = eta.format(DateTimeFormatter.ofPattern("HH:mm"))
+
+                        val infoFontSize = if (isLandscape) 13.sp else 14.sp
+                        val itemSpacer = if (isLandscape) 4.dp else 8.dp
+
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = km,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = infoFontSize,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.width(itemSpacer))
+                            Text(
+                                text = timeFormatted,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = infoFontSize,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.width(itemSpacer))
+                            Text(
+                                text = etaFormatted,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = infoFontSize,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onClearRoute,
+                            modifier = Modifier.width(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Ukloni rutu",
+                                tint = Color.White,
+                                modifier = Modifier.width(16.dp)
+                            )
+                        }
                     }
                 }
             }
         }
     }
+
 }
