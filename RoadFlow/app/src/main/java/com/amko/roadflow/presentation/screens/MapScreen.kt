@@ -874,6 +874,15 @@ fun MapScreen(
         }
     }
 
+    LaunchedEffect(currentSpeed, suppressSpeedUntilNanos) {
+        val now = System.nanoTime()
+        displaySpeedKmh = when {
+            currentSpeed == null -> null
+            now < suppressSpeedUntilNanos -> 0f
+            else -> currentSpeed
+        }
+    }
+
     LaunchedEffect(routeAlternatives) {
         recomputeLabelFractions(forceRelayout = true)
     }

@@ -33,6 +33,7 @@ android {
         buildConfigField("String", "GITHUB_PAT", "\"${localProperties.getProperty("GITHUB_PAT", "")}\"")
         buildConfigField("String", "GITHUB_REPO_URL", "\"${localProperties.getProperty("GITHUB_REPO_URL", "")}\"")
         buildConfigField("String", "gkord", "\"${localProperties.getProperty("gkord", "")}\"")
+        buildConfigField("String", "g_login", "\"${localProperties.getProperty("g_login", "")}\"")
     }
 
     buildTypes {
@@ -92,4 +93,10 @@ dependencies {
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
     debugImplementation("com.google.firebase:firebase-appcheck-debug")
     implementation("androidx.compose.material:material-icons-extended")
+
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
 }

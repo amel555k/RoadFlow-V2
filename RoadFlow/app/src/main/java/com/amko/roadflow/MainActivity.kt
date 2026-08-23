@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
+        com.amko.roadflow.data.local.AppEntitlementState.init(application)
 
         val openedFromNotification = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
         val openedFromMapShortcut = intent?.getBooleanExtra("open_map_shortcut", false) == true
@@ -160,29 +161,37 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("history") {
-                        HistoryScreen(
-                            viewModel = historyViewModel,
-                            currentRoute = currentRoute,
-                            onNavigate = { route ->
-                                navController.navigate(route) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                        com.amko.roadflow.presentation.components.EntitlementGate(
+                            backgroundImageRes = com.amko.roadflow.R.drawable.kalendar
+                        ) {
+                            HistoryScreen(
+                                viewModel = historyViewModel,
+                                currentRoute = currentRoute,
+                                onNavigate = { route ->
+                                    navController.navigate(route) {
+                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                     composable("map") {
-                        MapScreen(
-                            currentRoute = currentRoute,
-                            onNavigate = { route ->
-                                navController.navigate(route) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                        com.amko.roadflow.presentation.components.EntitlementGate(
+                            backgroundImageRes = com.amko.roadflow.R.drawable.mapa
+                        ) {
+                            MapScreen(
+                                currentRoute = currentRoute,
+                                onNavigate = { route ->
+                                    navController.navigate(route) {
+                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                     composable("settings") {
                         SettingsScreen(

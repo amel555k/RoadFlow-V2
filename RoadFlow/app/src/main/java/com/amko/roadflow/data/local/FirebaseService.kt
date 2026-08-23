@@ -80,6 +80,10 @@ class FirebaseService {
         null
     }
 
+    suspend fun getAuthTokenPublicAsync(): String? = withContext(Dispatchers.IO) {
+        getAuthTokenAsync()
+    }
+
     private suspend fun getAuthTokenAsync(): String? = withContext(Dispatchers.IO) {
         if (!cachedToken.isNullOrEmpty()) return@withContext cachedToken
 
