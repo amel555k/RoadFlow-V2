@@ -15,7 +15,6 @@ import java.time.format.DateTimeFormatter
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import android.util.Base64
-import android.util.Log
 
 class FirebaseService {
 
@@ -32,8 +31,6 @@ class FirebaseService {
     private var cachedToken: String? = null
 
     private fun decryptAes(encryptedBase64: String): String {
-        val startDecrypt = System.currentTimeMillis()
-
         val keyBytes = Secrets.gkord.toByteArray(Charsets.UTF_8)
         val secretKey = SecretKeySpec(keyBytes, "AES")
         val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
@@ -41,16 +38,10 @@ class FirebaseService {
 
         val decodedBytes = Base64.decode(encryptedBase64, Base64.DEFAULT)
         val decryptedBytes = cipher.doFinal(decodedBytes)
-        val result = String(decryptedBytes, Charsets.UTF_8)
-
-        val endDecrypt = System.currentTimeMillis()
-
-        return result
+        return String(decryptedBytes, Charsets.UTF_8)
     }
 
     private suspend fun fetchPrivateEncryptedGithubFile(fileName: String): String? = withContext(Dispatchers.IO) {
-        val startGithubFetch = System.currentTimeMillis()
-
         val url = "$GITHUB_REPO_URL/$fileName"
 
         try {
@@ -64,11 +55,9 @@ class FirebaseService {
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
                 val encryptedContent = response.body?.string()
-
                 if (!encryptedContent.isNullOrBlank()) {
                     return@withContext decryptAes(encryptedContent)
                 }
-            } else {
             }
         } catch (e: Exception) {
         }
@@ -88,20 +77,13 @@ class FirebaseService {
             val request = Request.Builder().url(authUrl).post(body).build()
             val response = client.newCall(request).execute()
 
-            android.util.Log.d("WidgetDebug", "FirebaseService: getAuthTokenAsync response code=${response.code}")
-
             if (response.isSuccessful) {
                 val content = response.body?.string() ?: return@withContext null
                 val json = JSONObject(content)
                 cachedToken = json.getString("idToken")
-                android.util.Log.d("WidgetDebug", "FirebaseService: token dobijen uspjesno, duzina=${cachedToken?.length}")
                 return@withContext cachedToken
-            } else {
-                val errorBody = response.body?.string() ?: ""
-                android.util.Log.d("WidgetDebug", "FirebaseService: getAuthToken NEUSPJESAN response code=${response.code}, body=$errorBody")
             }
         } catch (e: Exception) {
-            android.util.Log.d("WidgetDebug", "FirebaseService: getAuthToken EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
         }
 
         null
@@ -118,23 +100,16 @@ class FirebaseService {
         val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
         val url = getAuthenticatedUrl("$FIREBASE_BASE_URL/$dateStr.json")
 
-        android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync pozivam URL")
-
         try {
             val request = Request.Builder().url(url).get().build()
             val response = client.newCall(request).execute()
 
-            android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync response code=${response.code}")
-
             if (!response.isSuccessful) {
-                val errorBody = response.body?.string() ?: ""
-                android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync NEUSPJESAN, code=${response.code}, body=$errorBody")
                 return@withContext radars
             }
 
             val json = response.body?.string()
             if (json.isNullOrBlank() || json == "null") {
-                android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync JSON prazan ili null")
                 return@withContext radars
             }
 
@@ -182,7 +157,6 @@ class FirebaseService {
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.d("WidgetDebug", "FirebaseService: getFirebaseRadarsAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
         }
 
         radars
@@ -193,21 +167,15 @@ class FirebaseService {
         val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
         val url = getAuthenticatedUrl("$HISTORY_BASE_URL/$dateStr.json")
 
-        android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: dateStr=$dateStr url=$HISTORY_BASE_URL/$dateStr.json")
-
         try {
             val request = Request.Builder().url(url).get().build()
             val response = client.newCall(request).execute()
 
-            android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: response code=${response.code}")
-
             if (!response.isSuccessful) {
-                android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: NEUSPJESAN response, body=${response.body?.string()}")
                 return@withContext radars
             }
 
             val json = response.body?.string()
-            android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: json length=${json?.length} preview=${json?.take(200)}")
             if (json.isNullOrBlank() || json == "null") return@withContext radars
 
             val rootObj = JSONObject(json)
@@ -215,7 +183,6 @@ class FirebaseService {
             rootObj.keys().forEach { cityName ->
                 val configLoc = RadarConfig.locations.firstOrNull { it.name == cityName }
                 if (configLoc == null) {
-                    android.util.Log.d("ROADFLOW1", "getHistoryRadarsAsync: cityName='$cityName' nema match u RadarConfig.locations, preskacem")
                     return@forEach
                 }
 
@@ -293,7 +260,6 @@ class FirebaseService {
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.d("WidgetDebug", "FirebaseService: fetchCoordinatesFromGithubAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
         }
 
         coordinates
@@ -326,7 +292,6 @@ class FirebaseService {
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.d("WidgetDebug", "FirebaseService: fetchMobilniCoordinatesFromGithubAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
         }
 
         coordinates
@@ -367,7 +332,7 @@ class FirebaseService {
                 .put(body)
                 .build()
 
-            val response = client.newCall(request).execute()
+            client.newCall(request).execute()
 
         } catch (e: Exception) {
         }

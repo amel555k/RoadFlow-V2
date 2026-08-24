@@ -1,7 +1,6 @@
 package com.amko.roadflow.data.local
 
 import android.content.Context
-import android.util.Log
 import com.amko.roadflow.domain.model.RadarCoordinate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,12 +13,29 @@ class CoordinateRepository(
     private val firebaseService: FirebaseService
 ) {
     private val filePath = File(context.filesDir, "coordinates.json")
+    private val prefs = context.getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
+
+    private fun currentFetchSlot(): String {
+        val date = TimeProvider.effectiveRadarDate()
+        val hour = TimeProvider.now().hour
+        val window = if (hour < 18) 1 else 2
+        return "$date-$window"
+    }
 
     suspend fun loadCoordinatesAsync(forceRefresh: Boolean = false): List<RadarCoordinate> = withContext(Dispatchers.IO) {
-        val startTime = System.currentTimeMillis()
+        val lastFetchedSlot = prefs.getString("coords_last_fetch_slot", null)
+        val currentSlot = currentFetchSlot()
+
+        if (!forceRefresh && lastFetchedSlot == currentSlot && filePath.exists()) {
+            val cached = readFromDiskAsync()
+            if (cached.isNotEmpty()) {
+                return@withContext cached
+            }
+        }
 
         val fetched = fetchAndCacheAsync()
         if (fetched.isNotEmpty()) {
+            prefs.edit().putString("coords_last_fetch_slot", currentSlot).apply()
             return@withContext fetched
         }
 
@@ -34,7 +50,11 @@ class CoordinateRepository(
     }
 
     suspend fun refreshCoordinatesAsync(): List<RadarCoordinate> = withContext(Dispatchers.IO) {
-        fetchAndCacheAsync()
+        val fetched = fetchAndCacheAsync()
+        if (fetched.isNotEmpty()) {
+            prefs.edit().putString("coords_last_fetch_slot", currentFetchSlot()).apply()
+        }
+        fetched
     }
 
     private suspend fun fetchAndCacheAsync(): List<RadarCoordinate> = withContext(Dispatchers.IO) {
@@ -43,26 +63,12 @@ class CoordinateRepository(
             val stacionirani = firebaseService.getStacionarniCoordinatesAsync()
             val combined = mobilni + stacionirani
 
-            combined
-                .filter {
-                    it.mainName.contains("Brank", true) ||
-                            it.mainName.contains("Duh", true) ||
-                            it.mainName.contains("Kaonik", true)
-                }
-                .forEach {
-                    Log.d(
-                        "COORD_DEBUG",
-                        "mainName='${it.mainName}' | city='${it.city}' | lat=${it.latitude} | lon=${it.longitude}"
-                    )
-                }
-
             if (combined.isNotEmpty()) {
                 saveToDiskAsync(combined)
             }
 
             combined
         } catch (e: Exception) {
-            android.util.Log.d("WidgetDebug", "CoordinateRepository: fetchAndCacheAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
             emptyList()
         }
     }
@@ -91,14 +97,12 @@ class CoordinateRepository(
             }
             result
         } catch (e: Exception) {
-            android.util.Log.d("WidgetDebug", "CoordinateRepository: readFromDiskAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
             emptyList()
         }
     }
 
     private suspend fun saveToDiskAsync(coordinates: List<RadarCoordinate>) = withContext(Dispatchers.IO) {
         try {
-            val startSave = System.currentTimeMillis()
             val jsonArray = JSONArray()
             coordinates.forEach { coord ->
                 val obj = JSONObject()
@@ -113,9 +117,7 @@ class CoordinateRepository(
                 jsonArray.put(obj)
             }
             filePath.writeText(jsonArray.toString(), Charsets.UTF_8)
-            Log.d("BrzinaFetcha", "Podaci uspjesno sacuvani u lokalni JSON. Putanja: ${filePath.absolutePath}, trajanje cuvanja: ${System.currentTimeMillis() - startSave} ms")
         } catch (e: Exception) {
-            android.util.Log.d("WidgetDebug", "CoordinateRepository: saveToDiskAsync EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 }
