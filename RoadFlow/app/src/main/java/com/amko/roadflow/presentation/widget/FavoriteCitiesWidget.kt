@@ -262,7 +262,7 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
         return withContext(Dispatchers.IO) {
             val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
             val file = File(context.filesDir, "widget.txt")
-            val isCachedForToday = file.exists() && LocalDate.ofEpochDay(file.lastModified() / 86400000L) == LocalDate.now()
+            val isCachedForToday = file.exists() && LocalDate.ofEpochDay(file.lastModified() / 86400000L) == com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate()
             val internetAvailable = isInternetAvailable(context)
 
             var (allData, fetchFailed) = readCachedRadars(context, city1, city2, isCachedForToday)
@@ -334,7 +334,7 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
             val firebaseService = FirebaseService()
             val parser = com.amko.roadflow.data.local.RadarParser(context, firebaseService)
             val selectedCities = listOf(city1, city2).filter { it.isNotBlank() }.distinct()
-            val today = LocalDate.now()
+            val today = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate()
 
             val widgetDataLines = mutableListOf<String>()
             val firebaseRadars = firebaseService.getFirebaseRadarsAsync(today)

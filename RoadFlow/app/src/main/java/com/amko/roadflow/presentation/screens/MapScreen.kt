@@ -1506,6 +1506,7 @@ fun MapScreen(
 
             if (isActiveTracking) {
                 val hasActiveRoute = currentRouteResult != null
+                val hasExpandedRoute = hasActiveRoute && isRouteCardExpanded
                 SpeedOverlay(
                     isInRadarZone = isInRadarZone,
                     speedLimitInZone = speedLimitInZone,
@@ -1514,8 +1515,9 @@ fun MapScreen(
                         .align(Alignment.TopEnd)
                         .padding(
                             top = when {
+                                isLandscape && hasExpandedRoute -> 60.dp
                                 isLandscape -> 20.dp
-                                hasActiveRoute -> 130.dp
+                                hasExpandedRoute -> 130.dp
                                 else -> 50.dp
                             },
                             end = 20.dp

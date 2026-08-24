@@ -33,7 +33,6 @@ class FirebaseService {
 
     private fun decryptAes(encryptedBase64: String): String {
         val startDecrypt = System.currentTimeMillis()
-        Log.d("BrzinaFetcha", "Dekripcija pocetak")
 
         val keyBytes = Secrets.gkord.toByteArray(Charsets.UTF_8)
         val secretKey = SecretKeySpec(keyBytes, "AES")
@@ -45,14 +44,12 @@ class FirebaseService {
         val result = String(decryptedBytes, Charsets.UTF_8)
 
         val endDecrypt = System.currentTimeMillis()
-        Log.d("BrzinaFetcha", "Dekripcija kraj, trajanje: ${endDecrypt - startDecrypt} ms")
 
         return result
     }
 
     private suspend fun fetchPrivateEncryptedGithubFile(fileName: String): String? = withContext(Dispatchers.IO) {
         val startGithubFetch = System.currentTimeMillis()
-        Log.d("BrzinaFetcha", "Startno vrijeme fetchanja sa githuba: $fileName")
 
         val url = "$GITHUB_REPO_URL/$fileName"
 
@@ -67,15 +64,13 @@ class FirebaseService {
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
                 val encryptedContent = response.body?.string()
-                Log.d("BrzinaFetcha", "Kraj fetchanja sa githuba ($fileName), trajanje: ${System.currentTimeMillis() - startGithubFetch} ms")
+
                 if (!encryptedContent.isNullOrBlank()) {
                     return@withContext decryptAes(encryptedContent)
                 }
             } else {
-                android.util.Log.d("WidgetDebug", "FirebaseService: Github error code=${response.code}")
             }
         } catch (e: Exception) {
-            android.util.Log.d("WidgetDebug", "FirebaseService: fetchPrivateEncryptedGithubFile EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
         }
         null
     }
