@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -86,11 +87,14 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         selectedDate.value = date
 
         loadingJob?.cancel()
-        loadingJob = viewModelScope.launch {
+        val thisJob = viewModelScope.launch {
             isLoading.value = true
             showNoInternet.value = false
             try {
                 val radars = firebaseService.getHistoryRadarsAsync(date)
+
+                if (!kotlinx.coroutines.currentCoroutineContext().isActive) return@launch
+
                 _allRadars.value = radars
 
                 val filtered = withContext(Dispatchers.Default) {
@@ -98,15 +102,22 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                 }
                 _displayedRadars.value = filtered
                 _uiList.value = buildUiList(filtered)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _allRadars.value = emptyList()
-                _displayedRadars.value = emptyList()
-                _uiList.value = emptyList()
-                showNoInternet.value = true
+                if (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                    _allRadars.value = emptyList()
+                    _displayedRadars.value = emptyList()
+                    _uiList.value = emptyList()
+                    showNoInternet.value = true
+                }
             } finally {
-                isLoading.value = false
+                if (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                    isLoading.value = false
+                }
             }
         }
+        loadingJob = thisJob
     }
 
     fun clearSelection() {

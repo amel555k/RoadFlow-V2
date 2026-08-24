@@ -91,7 +91,7 @@ private const val ROUTE_ALT_LABEL_LAYER_ID = "route-alt-label-layer"
 private const val MIN_GEOJSON_UPDATE_INTERVAL_NANOS = 16_000_000L
 private const val SNAP_DISTANCE_METERS = 12.0
 private const val SNAP_MAX_ANGLE_DIFF_DEGREES = 55.0
-private const val SNAP_DISTANCE_HYSTERESIS_METERS = 18.0
+private const val SNAP_DISTANCE_HYSTERESIS_METERS = 12.0
 private const val SNAP_ANGLE_HYSTERESIS_DEGREES = 70.0
 private const val OFF_ROUTE_REROUTE_DELAY_NANOS = 5_000_000_000
 private const val OFF_ROUTE_DISTANCE_METERS = 5.0
@@ -1423,7 +1423,7 @@ fun MapScreen(
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (!isActiveTracking && !isCalculatingRoute) {
+                if (!isActiveTracking && !isCalculatingRoute && isGpsEnabled && locationFound) {
                     LocationSearchBar(
                         selectedLocationName = selectedDestinationName,
                         isPickingOnMap = isPickingOnMap,
@@ -1612,8 +1612,9 @@ fun MapScreen(
             if (showNoGps) {
                 NoConnectionDialog(
                     title = "GPS je isključen",
-                    message = "Molimo uključite lokaciju kako bi aplikacija mogla raditi.",
-                    onDismiss = { requestEnableGps() }
+                    message = "Molimo uključite lokaciju kako bi aktivno praćenje radilo.",
+                    onDismiss = { requestEnableGps() },
+                    onCancel = { showNoGps = false }
                 )
             }
 

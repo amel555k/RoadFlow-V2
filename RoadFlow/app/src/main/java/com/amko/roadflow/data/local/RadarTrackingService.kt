@@ -263,7 +263,7 @@ class RadarTrackingService : Service() {
         return NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
             .setContentTitle("RoadFlow")
             .setContentText("Praćenje vožnje je aktivirano")
-            .setSmallIcon(R.drawable.ic_notification2)
+            .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setShowWhen(false)
