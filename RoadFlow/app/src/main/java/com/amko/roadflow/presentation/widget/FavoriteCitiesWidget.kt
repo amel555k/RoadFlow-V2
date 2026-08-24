@@ -120,16 +120,23 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
             ) {
                 val headerText = if (fileModificationDate.isNotEmpty()) "RoadFlow ($fileModificationDate)" else "RoadFlow"
 
-                Text(
-                    text = headerText,
-                    style = TextStyle(
-                        color = ColorProvider(Color.White),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    ),
-                    modifier = GlanceModifier.defaultWeight()
-                        .clickable(actionRunCallback<OpenAppCallback>())
-                )
+                Row(
+                    modifier = GlanceModifier
+                        .defaultWeight()
+                        .clickable(actionRunCallback<OpenAppCallback>()),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = headerText,
+                        style = TextStyle(
+                            color = ColorProvider(Color.White),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    )
+
+                    Spacer(modifier = GlanceModifier.defaultWeight())
+                }
 
                 if (isLoading) {
                     Text(

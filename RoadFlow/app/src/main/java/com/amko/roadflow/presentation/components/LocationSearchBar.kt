@@ -370,7 +370,7 @@ fun LocationSearchBar(
                                 expandedFromSelection = false
                                 onPickOnMapStart()
                             }
-                            .padding(start = 64.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
 

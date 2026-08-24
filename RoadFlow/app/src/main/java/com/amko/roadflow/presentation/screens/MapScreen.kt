@@ -1206,6 +1206,13 @@ fun MapScreen(
             viewModel.stopBackgroundTracking()
             alertService.stopAlerts()
 
+            val activeRoute = routeAlternatives.getOrNull(selectedRouteIndex)
+            val dest = selectedDestination
+            if (activeRoute != null && dest != null) {
+                routeAlternatives = listOf(activeRoute)
+                selectedRouteIndex = 0
+            }
+
             delay(100)
 
             map.animateCamera(
@@ -1291,11 +1298,7 @@ fun MapScreen(
                         map.setMinZoomPreference(6.0)
                         map.setMaxZoomPreference(18.0)
 
-                        val bihBounds = LatLngBounds.Builder()
-                            .include(LatLng(45.17, 15.60))
-                            .include(LatLng(42.56, 19.50))
-                            .build()
-                        map.setLatLngBoundsForCameraTarget(bihBounds)
+                        map.setLatLngBoundsForCameraTarget(null)
 
                         map.addOnCameraMoveListener {
                             updateDestinationScreenPoint()
