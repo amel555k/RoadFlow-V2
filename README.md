@@ -55,6 +55,18 @@ The primary goal of RoadFlow is to give drivers a reliable, easy-to-use tool for
 ### App Shortcuts
 - Quick access to the Map and Calendar (History) screens directly from the launcher
 
+
+## Screenshots
+
+<p align="center">
+  <img src="Screenshots/screen1.png" width="200" />
+  <img src="Screenshots/screen2.png" width="200" />
+  <img src="Screenshots/screen3.png" width="200" />
+  <img src="Screenshots/screen4.png" width="200" />
+  <img src="Screenshots/screen5.png" width="200" />
+  <img src="Screenshots/screen6.png" width="200" />
+</p>
+
 ## Tech Stack
 
 | Category | Technology |

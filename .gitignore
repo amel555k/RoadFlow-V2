@@ -4,6 +4,7 @@
 *.ap_
 *.aab
 
+/app/release/
 **/Secrets.kt
 
 # Files for the ART/Dalvik VM
@@ -55,8 +56,8 @@ captures/
 .externalNativeBuild
 .cxx/
 
-# Google Services file (uncomment if you want to keep it private)
-# google-services.json
+
+google-services.json
 
 # Lint output
 lint/reports/
