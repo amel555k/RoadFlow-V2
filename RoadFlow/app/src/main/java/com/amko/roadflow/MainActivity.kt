@@ -58,10 +58,10 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("roadflow_prefs", MODE_PRIVATE)
         val hasFavoriteChoice = prefs.getString("favorite_canton", null) != null
         val startDestination = when {
+            !hasFavoriteChoice -> "splash"
             openedFromHistoryShortcut -> "history"
-            openedFromMapShortcut && hasFavoriteChoice -> "map"
-            hasFavoriteChoice -> "main"
-            else -> "splash"
+            openedFromMapShortcut -> "map"
+            else -> "main"
         }
 
         setContent {
@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
                 val shouldOpenHistory by pendingOpenHistory
 
                 LaunchedEffect(shouldOpenMap) {
-                    if (shouldOpenMap) {
+                    if (shouldOpenMap && hasFavoriteChoice) {
                         navController.navigate("map") {
                             popUpTo(navController.graph.startDestinationId) { saveState = true }
                             launchSingleTop = true
@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(shouldOpenHistory) {
-                    if (shouldOpenHistory) {
+                    if (shouldOpenHistory && hasFavoriteChoice) {
                         navController.navigate("history") {
                             popUpTo(navController.graph.startDestinationId) { saveState = true }
                             launchSingleTop = true

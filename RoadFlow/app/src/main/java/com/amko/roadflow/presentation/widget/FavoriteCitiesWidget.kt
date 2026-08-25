@@ -14,12 +14,15 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
+import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
 import androidx.glance.background
@@ -42,6 +45,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 class FavoriteCitiesWidget : GlanceAppWidget() {
+
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         Log.d("WidgetDebug", "provideGlance: POZVAN za id=$id")
@@ -175,23 +180,52 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
                     }
                 }
             } else {
-                LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-                    item {
-                        CitySection(city1, radarDataCity1, fetchFailed)
-                    }
-                    item {
-                        Spacer(modifier = GlanceModifier.height(12.dp))
-                    }
-                    item {
-                        CitySection(city2, radarDataCity2, fetchFailed)
-                    }
-                    if (lastUpdateTime.isNotEmpty()) {
-                        item {
+                val size = LocalSize.current
+                val isWide = size.width >= 320.dp
+
+                if (isWide) {
+                    Column(modifier = GlanceModifier.fillMaxSize()) {
+                        Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                            Box(modifier = GlanceModifier.defaultWeight().fillMaxHeight()) {
+                                CitySectionScrollable(city1, radarDataCity1, fetchFailed)
+                            }
+                            Box(
+                                modifier = GlanceModifier
+                                    .width(1.dp)
+                                    .fillMaxHeight()
+                                    .background(ColorProvider(Color.Gray.copy(alpha = 0.4f)))
+                            ) {}
+                            Box(modifier = GlanceModifier.defaultWeight().fillMaxHeight()) {
+                                CitySectionScrollable(city2, radarDataCity2, fetchFailed)
+                            }
+                        }
+                        if (lastUpdateTime.isNotEmpty()) {
                             Spacer(modifier = GlanceModifier.height(8.dp))
                             Text(
                                 text = "Ažurirano: $lastUpdateTime",
-                                style = TextStyle(color = ColorProvider(Color.Gray), fontSize = 8.sp)
+                                style = TextStyle(color = ColorProvider(Color.Gray), fontSize = 12.sp)
                             )
+                        }
+                    }
+                } else {
+                    LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+                        item {
+                            CitySection(city1, radarDataCity1, fetchFailed)
+                        }
+                        item {
+                            Spacer(modifier = GlanceModifier.height(12.dp))
+                        }
+                        item {
+                            CitySection(city2, radarDataCity2, fetchFailed)
+                        }
+                        if (lastUpdateTime.isNotEmpty()) {
+                            item {
+                                Spacer(modifier = GlanceModifier.height(8.dp))
+                                Text(
+                                    text = "Ažurirano: $lastUpdateTime",
+                                    style = TextStyle(color = ColorProvider(Color.Gray), fontSize = 8.sp)
+                                )
+                            }
                         }
                     }
                 }
@@ -251,6 +285,60 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
         }
     }
 
+    @Composable
+    private fun CitySectionScrollable(cityName: String, radars: List<RadarData>, hasError: Boolean) {
+        Column(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(ColorProvider(Color.White.copy(alpha = 0.06f)))
+                .padding(10.dp)
+        ) {
+            Text(
+                text = cityName.uppercase(),
+                style = TextStyle(
+                    color = ColorProvider(Color.Cyan),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            )
+
+            Spacer(modifier = GlanceModifier.height(6.dp))
+
+            if (radars.isEmpty()) {
+                val statusText = if (hasError) "Greška pri učitavanju" else "Nema aktivnih radara"
+
+                Text(
+                    text = statusText,
+                    style = TextStyle(
+                        color = ColorProvider(Color.Gray),
+                        fontSize = 14.sp
+                    )
+                )
+            } else {
+                LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+                    items(radars.take(5)) { radar ->
+                        Column(modifier = GlanceModifier.padding(top = 6.dp)) {
+                            Text(
+                                text = radar.location,
+                                style = TextStyle(
+                                    color = ColorProvider(Color.White),
+                                    fontSize = 18.sp
+                                )
+                            )
+                            Text(
+                                text = radar.time,
+                                style = TextStyle(
+                                    color = ColorProvider(Color.LightGray),
+                                    fontSize = 18.sp
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private data class WidgetLoadResult(
         val city1Radars: List<RadarData>,
         val city2Radars: List<RadarData>,
@@ -267,10 +355,18 @@ class FavoriteCitiesWidget : GlanceAppWidget() {
 
             var (allData, fetchFailed) = readCachedRadars(context, city1, city2, isCachedForToday)
 
-            val citiesInCache = allData.map { it.city }.toHashSet()
-            val selectedCitiesSet = listOf(city1, city2).filter { it.isNotBlank() }.toHashSet()
-            val cacheCoversSelectedCities = selectedCitiesSet.isNotEmpty() && citiesInCache.containsAll(selectedCitiesSet)
-            val cacheIsValid = isCachedForToday && cacheCoversSelectedCities
+            val currentHour = com.amko.roadflow.data.local.TimeProvider.now().hour
+            val pastBihamkDeadline = currentHour >= 9
+
+            val selectedCities = listOf(city1, city2).filter { it.isNotBlank() }
+            val pendingBihamkCities = selectedCities.filter { cityName ->
+                val location = RadarConfig.locations.firstOrNull { it.name == cityName }
+                val isBihamkCity = location != null && !location.fromFirebase && location.parsingEnabled
+                val hasDataForCity = allData.any { it.city == cityName }
+                isBihamkCity && !hasDataForCity
+            }
+
+            val cacheIsValid = isCachedForToday && (pendingBihamkCities.isEmpty() || pastBihamkDeadline)
 
             if (internetAvailable && !cacheIsValid) {
                 val fetchResult = fetchAndSaveWidgetData(context, city1, city2)

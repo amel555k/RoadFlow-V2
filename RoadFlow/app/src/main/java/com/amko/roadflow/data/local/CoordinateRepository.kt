@@ -88,10 +88,10 @@ class CoordinateRepository(
                         latitude = obj.optDouble("latitude", 0.0),
                         longitude = obj.optDouble("longitude", 0.0),
                         speedLimit = obj.optInt("speedLimit", 0),
-                        startTime = if (obj.isNull("startTime")) null else obj.optString("startTime", null),
-                        endTime = if (obj.isNull("endTime")) null else obj.optString("endTime", null),
+                        startTime = if (obj.isNull("startTime")) null else obj.optString("startTime"),
+                        endTime = if (obj.isNull("endTime")) null else obj.optString("endTime"),
                         stacionaran = obj.optBoolean("stacionaran", false),
-                        city = if (obj.isNull("city")) null else obj.optString("city", null)
+                        city = if (obj.isNull("city")) null else obj.optString("city")
                     )
                 )
             }

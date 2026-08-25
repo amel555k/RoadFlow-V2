@@ -38,8 +38,10 @@ class RoadFlowApp : Application() {
             try {
                 val debugFactoryClass = Class.forName("com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory")
                 val getInstanceMethod = debugFactoryClass.getMethod("getInstance")
-                val debugFactory = getInstanceMethod.invoke(null) as AppCheckProviderFactory
-                firebaseAppCheck.installAppCheckProviderFactory(debugFactory)
+                val debugFactory = getInstanceMethod.invoke(null)
+                if (debugFactory is AppCheckProviderFactory) {
+                    firebaseAppCheck.installAppCheckProviderFactory(debugFactory)
+                }
             } catch (e: Exception) {
                 Log.e("RoadFlowApp", "Greska pri inicijalizaciji DebugAppCheck: ${e.message}")
             }

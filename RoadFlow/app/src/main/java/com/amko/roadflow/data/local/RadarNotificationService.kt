@@ -113,7 +113,16 @@ class RadarNotificationService : Service() {
     private fun startPeriodicUpdates() {
         serviceScope.launch {
             while (isActive) {
-                fetchData()
+                val firebaseServiceCheck = FirebaseService()
+                val parserCheck = RadarParser(applicationContext, firebaseServiceCheck)
+                if (parserCheck.isCachedForToday()) {
+                    val cached = parserCheck.getActiveRadarsAsync()
+                    currentRadars = cached
+                    isNoInternetNoCache = false
+                    updateNotification()
+                } else {
+                    fetchData()
+                }
                 delay(15 * 60 * 1000L)
             }
         }
@@ -147,6 +156,8 @@ class RadarNotificationService : Service() {
             currentRadars = cached
             isNoInternetNoCache = false
             updateNotification()
+            isFetching = false
+            return
         }
 
         val timeoutJob = serviceScope.launch {
@@ -200,8 +211,14 @@ class RadarNotificationService : Service() {
             val activeRadars = cityRadars.filter { isRadarActiveNow(it.time) }
             val now = LocalTime.now().withNano(0)
 
+            val dataDate = cityRadars.firstOrNull()?.pageDate?.toLocalDate()
+            val currentEffectiveDate = TimeProvider.effectiveRadarDate()
+            val isDataStale = dataDate != null && dataDate != currentEffectiveDate
+
             contentText = if (cityRadars.isEmpty()) {
                 "Danas nema planiranih radara."
+            } else if (isDataStale) {
+                "Nema više radara danas"
             } else if (activeRadars.isEmpty()) {
                 val nextStart = cityRadars
                     .mapNotNull { parseTimeRange(it.time)?.first }
@@ -230,6 +247,14 @@ class RadarNotificationService : Service() {
             }
         }
 
+        val titleDateSuffix = if (!isNoInternetNoCache) {
+            val cityRadarsForTitle = currentRadars.filter { it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO" }
+            val dataDate = cityRadarsForTitle.firstOrNull()?.pageDate?.toLocalDate()
+            if (dataDate != null) " (${dataDate.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))})" else ""
+        } else {
+            ""
+        }
+
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -244,7 +269,7 @@ class RadarNotificationService : Service() {
         )
 
         val builder = NotificationCompat.Builder(applicationContext, "radar_status_channel")
-            .setContentTitle(if (favoriteCity.isBlank()) "RoadFlow" else favoriteCity)
+            .setContentTitle(if (favoriteCity.isBlank()) "RoadFlow" else "$favoriteCity$titleDateSuffix")
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)

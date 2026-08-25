@@ -45,3 +45,10 @@
 
 # --- Coroutines ---
 -keepclassmembers class * extends kotlinx.coroutines.AbstractCoroutine { *; }
+
+-keep class * extends androidx.glance.appwidget.action.ActionCallback {
+    <init>();
+    *;
+}
+
+-keep class com.amko.roadflow.presentation.widget.** { *; }
