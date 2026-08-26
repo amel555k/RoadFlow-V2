@@ -22,14 +22,14 @@ fun LocateMeButton(
         modifier = modifier
             .size(56.dp)
             .background(
-                color = Color.White,
+                color = Color(0xFF004E5A),
                 shape = CircleShape
             )
     ) {
         Icon(
             painter = painterResource(id = R.drawable.ic_locate),
             contentDescription = null,
-            tint = Color(0xFF004E5A),
+            tint = Color.White,
             modifier = Modifier.size(24.dp)
         )
     }

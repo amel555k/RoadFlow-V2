@@ -489,8 +489,17 @@ fun MapScreen(
     var isTransitioningToTracking by remember { mutableStateOf(false) }
     var isCameraLocked by remember { mutableStateOf(false) }
     var showNoGps by remember { mutableStateOf(false) }
+    var showPermissionExplanation by remember { mutableStateOf(false) }
     var locationFound by remember { mutableStateOf(hadSavedCameraOnEnter) }
     var gpsWasDisabled by remember { mutableStateOf(false) }
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
     var isGpsEnabled by remember { mutableStateOf(true) }
     var showGpsLoading by remember { mutableStateOf(false) }
     var lastSnapWasSuccessful by remember { mutableStateOf(false) }
@@ -605,7 +614,12 @@ fun MapScreen(
                     as android.location.LocationManager
             val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
 
-            if (!gpsEnabled && isGpsEnabled) {
+            val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (!gpsEnabled && isGpsEnabled && fineGranted) {
                 showNoGps = true
                 gpsWasDisabled = true
                 showGpsLoading = false
@@ -638,9 +652,6 @@ fun MapScreen(
         }
     }
 
-    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { }
 
     val gpsSettingsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -684,6 +695,23 @@ fun MapScreen(
             }
         }
     }
+    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) {
+        val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
+                as android.location.LocationManager
+        val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+
+        if (!gpsEnabled) {
+            coroutineScope.launch {
+                delay(1000)
+                requestEnableGps()
+            }
+        } else {
+            viewModel.locationService.startPassiveTracking()
+        }
+    }
+
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -691,7 +719,7 @@ fun MapScreen(
         val granted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) {
-            viewModel.locationService.startPassiveTracking()
+            var willAskBackground = false
 
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 val backgroundGranted = androidx.core.content.ContextCompat.checkSelfPermission(
@@ -700,12 +728,27 @@ fun MapScreen(
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
                 if (!backgroundGranted) {
+                    willAskBackground = true
                     backgroundPermissionLauncher.launch(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                }
+            }
+
+            if (!willAskBackground) {
+                val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
+                        as android.location.LocationManager
+                val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+
+                if (!gpsEnabled) {
+                    coroutineScope.launch {
+                        delay(1000)
+                        requestEnableGps()
+                    }
+                } else {
+                    viewModel.locationService.startPassiveTracking()
                 }
             }
         }
     }
-
     LaunchedEffect(Unit) {
         val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
             context,
@@ -727,13 +770,6 @@ fun MapScreen(
                 viewModel.locationService.setInitialLocation(lastKnown)
             }
             viewModel.locationService.startPassiveTracking()
-        } else {
-            permissionLauncher.launch(
-                arrayOf(
-                    android.Manifest.permission.ACCESS_FINE_LOCATION,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            )
         }
     }
     val orientation = LocalConfiguration.current.orientation
@@ -1260,6 +1296,16 @@ fun MapScreen(
     }
 
     suspend fun locateMe() {
+        val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!fineGranted) {
+            showPermissionExplanation = true
+            return
+        }
+
         val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
                 as android.location.LocationManager
         val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
@@ -1276,7 +1322,6 @@ fun MapScreen(
             viewModel.locationService.startPassiveTracking()
         }
     }
-
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -1552,7 +1597,7 @@ fun MapScreen(
                             isPickingOnMap = isPickingOnMap,
                             onToggle = { toggleTracking() }
                         )
-                    } else if (!isGpsEnabled || (gpsWasDisabled && !locationFound)) {
+                    } else if (!hasLocationPermission || !isGpsEnabled || (gpsWasDisabled && !locationFound)) {
                         LocateMeButton(
                             onClick = { coroutineScope.launch { locateMe() } }
                         )
@@ -1572,7 +1617,7 @@ fun MapScreen(
                             isPickingOnMap = isPickingOnMap,
                             onToggle = { toggleTracking() }
                         )
-                    } else if (!isGpsEnabled || (gpsWasDisabled && !locationFound)) {
+                    } else if (!hasLocationPermission || !isGpsEnabled || (gpsWasDisabled && !locationFound)) {
                         LocateMeButton(
                             onClick = { coroutineScope.launch { locateMe() } }
                         )
@@ -1617,6 +1662,24 @@ fun MapScreen(
                     message = "Molimo uključite lokaciju kako bi aktivno praćenje radilo.",
                     onDismiss = { requestEnableGps() },
                     onCancel = { showNoGps = false }
+                )
+            }
+
+            if (showPermissionExplanation) {
+                LocationPermissionExplanationDialog(
+                    onDismiss = { showPermissionExplanation = false },
+                    onConfirm = {
+                        showPermissionExplanation = false
+                        coroutineScope.launch {
+                            delay(1000)
+                            permissionLauncher.launch(
+                                arrayOf(
+                                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
+                    }
                 )
             }
 
