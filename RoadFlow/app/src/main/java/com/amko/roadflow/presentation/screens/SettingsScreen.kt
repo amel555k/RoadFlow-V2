@@ -66,10 +66,6 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-
-
             Spacer(modifier = Modifier.height(24.dp))
 
             SettingsCard(
@@ -98,24 +94,18 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Amel Kolasević",
+                    text = "RoadFlow v1.0 | ",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Verzija: 1.0",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Uslovi korištenja",
                     fontSize = 12.sp,

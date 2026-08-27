@@ -6,12 +6,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -35,6 +38,8 @@ import com.amko.roadflow.presentation.viewmodel.SoundViewModel
 import com.amko.roadflow.presentation.viewmodel.ThemeViewModel
 import com.amko.roadflow.ui.theme.RoadFlowTheme
 import org.maplibre.android.MapLibre
+import kotlin.math.max
+import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
 
@@ -67,107 +72,99 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val themeViewModel: ThemeViewModel = viewModel()
-            val themeMode by themeViewModel.themeMode.collectAsState()
+            val baseDensity = LocalDensity.current
+            val clampedFontScale = min(max(baseDensity.fontScale, 0.85f), 1.3f)
+            val clampedDensity = Density(
+                density = baseDensity.density,
+                fontScale = clampedFontScale
+            )
 
-            val navController = rememberNavController()
-            navControllerRef = navController
+            CompositionLocalProvider(LocalDensity provides clampedDensity) {
+                val themeViewModel: ThemeViewModel = viewModel()
+                val themeMode by themeViewModel.themeMode.collectAsState()
 
-            val navBackStackEntry by navController.currentBackStackEntryAsState()
-            val currentRoute = navBackStackEntry?.destination?.route
+                val navController = rememberNavController()
+                navControllerRef = navController
 
-            RoadFlowTheme(appTheme = if (currentRoute == "splash") com.amko.roadflow.ui.theme.AppTheme.DARK else themeMode) {
-                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-                val scope = rememberCoroutineScope()
-                val mainViewModel: MainViewModel = viewModel()
-                val historyViewModel: HistoryViewModel = viewModel()
-                val soundViewModel: SoundViewModel = viewModel()
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
 
-                LaunchedEffect(currentRoute) {
-                    requestedOrientation = if (currentRoute == "map") {
-                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                    } else {
-                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                    }
-                }
+                RoadFlowTheme(appTheme = if (currentRoute == "splash") com.amko.roadflow.ui.theme.AppTheme.DARK else themeMode) {
+                    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                    val scope = rememberCoroutineScope()
+                    val mainViewModel: MainViewModel = viewModel()
+                    val historyViewModel: HistoryViewModel = viewModel()
+                    val soundViewModel: SoundViewModel = viewModel()
 
-                val shouldOpenMap by pendingOpenMap
-                val shouldOpenHistory by pendingOpenHistory
-
-                LaunchedEffect(shouldOpenMap) {
-                    if (shouldOpenMap && hasFavoriteChoice) {
-                        navController.navigate("map") {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+                    LaunchedEffect(currentRoute) {
+                        requestedOrientation = if (currentRoute == "map") {
+                            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        } else {
+                            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                         }
-                        pendingOpenMap.value = false
                     }
-                }
 
-                LaunchedEffect(shouldOpenHistory) {
-                    if (shouldOpenHistory && hasFavoriteChoice) {
-                        navController.navigate("history") {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+                    val shouldOpenMap by pendingOpenMap
+                    val shouldOpenHistory by pendingOpenHistory
+
+                    LaunchedEffect(shouldOpenMap) {
+                        if (shouldOpenMap && hasFavoriteChoice) {
+                            navController.navigate("map") {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                            pendingOpenMap.value = false
                         }
-                        pendingOpenHistory.value = false
                     }
-                }
 
-                NavHost(navController = navController, startDestination = startDestination) {
-                    composable("splash") {
-                        val cityToCanton = remember {
-                            com.amko.roadflow.data.local.RadarConfig.locations
-                                .map { it.name to it.canton }
+                    LaunchedEffect(shouldOpenHistory) {
+                        if (shouldOpenHistory && hasFavoriteChoice) {
+                            navController.navigate("history") {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                            pendingOpenHistory.value = false
                         }
-                        val cantonList = remember {
-                            listOf(
-                                Canton.UnskoSanski to "Unsko-sanski kanton",
-                                Canton.Posavski to "Posavski kanton",
-                                Canton.Tuzlanski to "Tuzlanski kanton",
-                                Canton.ZenickoDobojski to "Zeničko-dobojski kanton",
-                                Canton.BosanskoPodrinjski to "Bosansko-podrinjski kanton",
-                                Canton.Srednjobosanski to "Srednjobosanski kanton",
-                                Canton.HercegovackoNeretvanski to "Hercegovačko-neretvanski kanton",
-                                Canton.Zapadnohercegovacki to "Zapadnohercegovački kanton",
-                                Canton.Sarajevo to "Kanton Sarajevo",
-                                Canton.Kanton10 to "Kanton 10",
-                                Canton.BrckoDistrikt to "Brčko distrikt"
+                    }
+
+                    NavHost(navController = navController, startDestination = startDestination) {
+                        composable("splash") {
+                            val cityToCanton = remember {
+                                com.amko.roadflow.data.local.RadarConfig.locations
+                                    .map { it.name to it.canton }
+                            }
+                            val cantonList = remember {
+                                listOf(
+                                    Canton.UnskoSanski to "Unsko-sanski kanton",
+                                    Canton.Posavski to "Posavski kanton",
+                                    Canton.Tuzlanski to "Tuzlanski kanton",
+                                    Canton.ZenickoDobojski to "Zeničko-dobojski kanton",
+                                    Canton.BosanskoPodrinjski to "Bosansko-podrinjski kanton",
+                                    Canton.Srednjobosanski to "Srednjobosanski kanton",
+                                    Canton.HercegovackoNeretvanski to "Hercegovačko-neretvanski kanton",
+                                    Canton.Zapadnohercegovacki to "Zapadnohercegovački kanton",
+                                    Canton.Sarajevo to "Kanton Sarajevo",
+                                    Canton.Kanton10 to "Kanton 10",
+                                    Canton.BrckoDistrikt to "Brčko distrikt"
+                                )
+                            }
+                            SplashScreen(
+                                cantonList = cantonList,
+                                cityToCanton = cityToCanton,
+                                onSave = { canton, city ->
+                                    mainViewModel.saveFavoriteChoice(canton, city)
+                                    navController.navigate("main") {
+                                        popUpTo("splash") { inclusive = true }
+                                    }
+                                }
                             )
                         }
-                        SplashScreen(
-                            cantonList = cantonList,
-                            cityToCanton = cityToCanton,
-                            onSave = { canton, city ->
-                                mainViewModel.saveFavoriteChoice(canton, city)
-                                navController.navigate("main") {
-                                    popUpTo("splash") { inclusive = true }
-                                }
-                            }
-                        )
-                    }
-                    composable("main") {
-                        MainScreen(
-                            viewModel = mainViewModel,
-                            themeViewModel = themeViewModel,
-                            currentRoute = currentRoute,
-                            onNavigate = { route ->
-                                navController.navigate(route) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        )
-                    }
-                    composable("history") {
-                        com.amko.roadflow.presentation.components.EntitlementGate(
-                            backgroundImageRes = com.amko.roadflow.R.drawable.kalendar
-                        ) {
-                            HistoryScreen(
-                                viewModel = historyViewModel,
+                        composable("main") {
+                            MainScreen(
+                                viewModel = mainViewModel,
+                                themeViewModel = themeViewModel,
                                 currentRoute = currentRoute,
                                 onNavigate = { route ->
                                     navController.navigate(route) {
@@ -178,12 +175,41 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
-                    }
-                    composable("map") {
-                        com.amko.roadflow.presentation.components.EntitlementGate(
-                            backgroundImageRes = com.amko.roadflow.R.drawable.mapa
-                        ) {
-                            MapScreen(
+                        composable("history") {
+                            com.amko.roadflow.presentation.components.EntitlementGate(
+                                backgroundImageRes = com.amko.roadflow.R.drawable.kalendar
+                            ) {
+                                HistoryScreen(
+                                    viewModel = historyViewModel,
+                                    currentRoute = currentRoute,
+                                    onNavigate = { route ->
+                                        navController.navigate(route) {
+                                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                        composable("map") {
+                            com.amko.roadflow.presentation.components.EntitlementGate(
+                                backgroundImageRes = com.amko.roadflow.R.drawable.mapa
+                            ) {
+                                MapScreen(
+                                    currentRoute = currentRoute,
+                                    onNavigate = { route ->
+                                        navController.navigate(route) {
+                                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                        composable("settings") {
+                            SettingsScreen(
                                 currentRoute = currentRoute,
                                 onNavigate = { route ->
                                     navController.navigate(route) {
@@ -191,43 +217,31 @@ class MainActivity : ComponentActivity() {
                                         launchSingleTop = true
                                         restoreState = true
                                     }
-                                }
+                                },
+                                onNavigateToTheme = { navController.navigate("theme_settings") },
+                                onNavigateToWidget = { navController.navigate("widget_settings") },
+                                onNavigateToSound = { navController.navigate("sound_settings") }
                             )
                         }
-                    }
-                    composable("settings") {
-                        SettingsScreen(
-                            currentRoute = currentRoute,
-                            onNavigate = { route ->
-                                navController.navigate(route) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            onNavigateToTheme = { navController.navigate("theme_settings") },
-                            onNavigateToWidget = { navController.navigate("widget_settings") },
-                            onNavigateToSound = { navController.navigate("sound_settings") }
-                        )
-                    }
-                    composable("theme_settings") {
-                        ThemeSettingsScreen(
-                            mainViewModel = mainViewModel,
-                            onBack = { navController.popBackStack() }
-                        )
-                    }
-                    composable("widget_settings") {
-                        WidgetSettingsScreen(
-                            mainViewModel = mainViewModel,
-                            onBack = { navController.popBackStack() }
-                        )
-                    }
-                    composable("sound_settings") {
-                        SoundSettingsScreen(
-                            soundViewModel = soundViewModel,
-                            mainViewModel = mainViewModel,
-                            onBack = { navController.popBackStack() }
-                        )
+                        composable("theme_settings") {
+                            ThemeSettingsScreen(
+                                mainViewModel = mainViewModel,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("widget_settings") {
+                            WidgetSettingsScreen(
+                                mainViewModel = mainViewModel,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("sound_settings") {
+                            SoundSettingsScreen(
+                                soundViewModel = soundViewModel,
+                                mainViewModel = mainViewModel,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }
