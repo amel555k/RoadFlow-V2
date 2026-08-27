@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,6 +32,7 @@ import com.amko.roadflow.domain.model.Canton
 fun BoxScope.CantonPickerDropdown(
     cantonList: List<Pair<Canton, String>>,
     selectedCanton: Canton?,
+    isDarkTheme: Boolean,
     onCantonSelected: (Canton?) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -63,14 +65,18 @@ fun BoxScope.CantonPickerDropdown(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onCantonSelected(canton) }
-                        .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface)
+                        .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
                         .padding(horizontal = 14.dp, vertical = 12.dp)
                 ) {
                     Text(
                         text = label,
                         fontSize = 14.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        color = if (isSelected) {
+                            Color.White
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
                     )
                 }
             }

@@ -157,6 +157,7 @@ fun HistoryScreen(
                 selectedCantonLabel = selectedCantonLabel,
                 cantonList = cantonList,
                 isDropdownOpen = isDropdownOpen,
+                isDarkTheme = isDark,
                 onDropdownToggle = { isDropdownOpen = !isDropdownOpen },
                 onCantonSelected = { canton ->
                     viewModel.selectCanton(canton)
@@ -196,6 +197,7 @@ private fun DayDetailsOverlay(
     selectedCantonLabel: String,
     cantonList: List<Pair<Canton, String>>,
     isDropdownOpen: Boolean,
+    isDarkTheme: Boolean,
     onDropdownToggle: () -> Unit,
     onCantonSelected: (Canton?) -> Unit,
     onDismissDropdown: () -> Unit,
@@ -346,6 +348,7 @@ private fun DayDetailsOverlay(
             CantonPickerDropdown(
                 cantonList = cantonList,
                 selectedCanton = selectedCanton,
+                isDarkTheme = isDarkTheme,
                 onCantonSelected = onCantonSelected,
                 onDismiss = onDismissDropdown
             )

@@ -329,9 +329,11 @@ fun MainScreen(
         }
 
         if (isDropdownOpen) {
+            val currentTheme by themeViewModel.themeMode.collectAsState()
             CantonPickerDropdown(
                 cantonList = cantonList,
                 selectedCanton = selectedCanton,
+                isDarkTheme = currentTheme == com.amko.roadflow.ui.theme.AppTheme.DARK,
                 onCantonSelected = { canton ->
                     viewModel.selectCanton(canton)
                     isDropdownOpen = false
@@ -339,7 +341,6 @@ fun MainScreen(
                 onDismiss = { isDropdownOpen = false }
             )
         }
-
         if (showNoInternet) {
             NoConnectionDialog(
                 title = "Nema internet konekcije",

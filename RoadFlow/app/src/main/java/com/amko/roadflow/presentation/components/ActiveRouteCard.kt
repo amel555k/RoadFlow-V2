@@ -289,7 +289,7 @@ fun ActiveRouteCard(
                         val remainingMinutes = totalMinutes % 60
 
                         val timeFormatted = when {
-                            hours > 0 && remainingMinutes > 0 -> "${hours}h${remainingMinutes}m"
+                            hours > 0 && remainingMinutes > 0 -> "${hours}h ${remainingMinutes}m"
                             hours > 0 -> "${hours}h"
                             remainingMinutes > 0 -> "${remainingMinutes} min"
                             else -> "1 min"

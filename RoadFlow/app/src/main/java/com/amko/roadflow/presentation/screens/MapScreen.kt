@@ -652,7 +652,6 @@ fun MapScreen(
         }
     }
 
-
     val gpsSettingsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
@@ -704,7 +703,7 @@ fun MapScreen(
 
         if (!gpsEnabled) {
             coroutineScope.launch {
-                delay(1000)
+                delay(200)
                 requestEnableGps()
             }
         } else {
@@ -740,7 +739,7 @@ fun MapScreen(
 
                 if (!gpsEnabled) {
                     coroutineScope.launch {
-                        delay(1000)
+                        delay(200)
                         requestEnableGps()
                     }
                 } else {
@@ -1671,7 +1670,7 @@ fun MapScreen(
                     onConfirm = {
                         showPermissionExplanation = false
                         coroutineScope.launch {
-                            delay(1000)
+                            delay(200)
                             permissionLauncher.launch(
                                 arrayOf(
                                     android.Manifest.permission.ACCESS_FINE_LOCATION,
