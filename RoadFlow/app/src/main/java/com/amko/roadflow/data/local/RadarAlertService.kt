@@ -267,6 +267,9 @@ class RadarAlertService(private val context: Context) {
         }
         prepareAudio()
         abandonAudioFocus()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            abandonAudioFocus()
+        }, 300L)
     }
     private fun startAlertLoop(speedKmh: Double) {
         stopAlertLoop()
@@ -286,6 +289,7 @@ class RadarAlertService(private val context: Context) {
     }
 
     private fun playBeep() {
+        if (!isInsideZone) return
         try {
             if (isVibrationEnabled()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -313,7 +317,6 @@ class RadarAlertService(private val context: Context) {
             android.util.Log.e("RadarAlertService", "Greška pri beep-u: ${e.message}")
         }
     }
-
     fun stopAlerts() {
         if (isInsideZone) exitZone()
     }

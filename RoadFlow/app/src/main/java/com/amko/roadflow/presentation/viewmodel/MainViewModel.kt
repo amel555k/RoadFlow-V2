@@ -53,12 +53,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notificationEnabled.value = enabled
         prefs.edit().putBoolean("notification_enabled", enabled).apply()
 
-        val serviceIntent = android.content.Intent(getApplication(), com.amko.roadflow.data.local.RadarNotificationService::class.java)
-
         if (enabled) {
-            androidx.core.content.ContextCompat.startForegroundService(getApplication(), serviceIntent)
+            com.amko.roadflow.data.local.RadarWorkScheduler.schedulePeriodic(getApplication())
+            com.amko.roadflow.data.local.RadarWorkScheduler.scheduleOneTime(getApplication())
         } else {
-            getApplication<Application>().stopService(serviceIntent)
+            com.amko.roadflow.data.local.RadarWorkScheduler.cancelAll(getApplication())
             val notificationManager = getApplication<Application>().getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
             notificationManager.cancel(1001)
         }
@@ -82,10 +81,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         android.util.Log.d("ROADFLOW1", "saveFavoriteChoice: uiList.size=${_uiList.value.size}")
 
         if (prefs.getBoolean("notification_enabled", false)) {
-            val serviceIntent = android.content.Intent(getApplication(), com.amko.roadflow.data.local.RadarNotificationService::class.java).apply {
-                action = "UPDATE_CITY"
-            }
-            androidx.core.content.ContextCompat.startForegroundService(getApplication(), serviceIntent)
+            com.amko.roadflow.data.local.RadarWorkScheduler.cancelAll(getApplication())
+            com.amko.roadflow.data.local.RadarWorkScheduler.scheduleOneTime(getApplication())
+            com.amko.roadflow.data.local.RadarWorkScheduler.schedulePeriodic(getApplication())
         }
     }
 

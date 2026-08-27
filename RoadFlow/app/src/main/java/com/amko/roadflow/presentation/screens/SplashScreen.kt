@@ -326,7 +326,7 @@ fun SplashScreen(
 }
 
 @Composable
-private fun TermsDialog(
+fun TermsDialog(
     readOnly: Boolean = false,
     onAccept: () -> Unit,
     onClose: () -> Unit = {}

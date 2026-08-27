@@ -180,10 +180,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val isNotificationEnabled = prefs.getBoolean("notification_enabled", false)
 
         if (isNotificationEnabled) {
-            val serviceIntent = android.content.Intent(getApplication(), com.amko.roadflow.data.local.RadarNotificationService::class.java).apply {
-                action = "UPDATE_CITY"
-            }
-            androidx.core.content.ContextCompat.startForegroundService(getApplication(), serviceIntent)
+            com.amko.roadflow.data.local.RadarWorkScheduler.cancelAll(getApplication())
+            com.amko.roadflow.data.local.RadarWorkScheduler.scheduleOneTime(getApplication())
+            com.amko.roadflow.data.local.RadarWorkScheduler.schedulePeriodic(getApplication())
         }
     }
 

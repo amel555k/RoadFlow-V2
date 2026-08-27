@@ -22,10 +22,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.amko.roadflow.presentation.components.BottomNavBar
 
 @Composable
@@ -36,6 +42,7 @@ fun SettingsScreen(
     onNavigateToWidget: () -> Unit,
     onNavigateToSound: () -> Unit
 ) {
+    var showTermsDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -88,11 +95,52 @@ fun SettingsScreen(
                 description = "Push notifikacije, vibracija, govor i vrsta zvučnog signala",
                 onClick = onNavigateToSound
             )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Amel Kolasević",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Verzija: 1.0",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Uslovi korištenja",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier.clickable {
+                        showTermsDialog = true
+                    }
+                )
+            }
         }
 
         BottomNavBar(
             currentRoute = currentRoute,
             onNavigate = onNavigate
+        )
+    }
+
+    if (showTermsDialog) {
+        TermsDialog(
+            readOnly = true,
+            onAccept = {},
+            onClose = {
+                showTermsDialog = false
+            }
         )
     }
 }
