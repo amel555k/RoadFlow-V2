@@ -23,6 +23,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val firebaseService = FirebaseService()
     private val parser = RadarParser(application, firebaseService)
     private val coordinateRepository = CoordinateRepository(application, firebaseService)
+    private val prefs = application.getSharedPreferences("roadflow_prefs", Application.MODE_PRIVATE)
 
     init {
         RadarTrackingService.init(application)
@@ -92,7 +93,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     RadarConfig.coordinates = coordinateRepository.loadCoordinatesAsync()
                 }
 
-                parser.parseAllLocationsAsFlow().collect { }
+                val lastSeenDate = prefs.getString("last_seen_radar_date", null)
+                val todayStr = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate().toString()
+                val isNewDay = lastSeenDate != todayStr
+
+                parser.parseAllLocationsAsFlow(forceRefresh = isNewDay).collect { }
+                prefs.edit().putString("last_seen_radar_date", todayStr).apply()
+
                 parser.debugLogUnmatchedLocations()
 
                 val all = parser.getExpandedRadarsForMapAsync()

@@ -149,7 +149,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun loadData() {
         viewModelScope.launch {
             isLoading.value = true
-            loadDataInternal()
+
+            val lastSeenDate = prefs.getString("last_seen_radar_date", null)
+            val todayStr = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate().toString()
+            val isNewDay = lastSeenDate != todayStr
+
+            loadDataInternal(forceRefresh = isNewDay)
+            prefs.edit().putString("last_seen_radar_date", todayStr).apply()
 
             val cachedToday = withContext(Dispatchers.IO) { parser.isCachedForToday() }
             canPullToRefresh.value = !cachedToday
