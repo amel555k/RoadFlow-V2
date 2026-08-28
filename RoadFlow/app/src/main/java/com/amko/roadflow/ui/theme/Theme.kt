@@ -2,6 +2,8 @@ package com.amko.roadflow.ui.theme
 
 import android.app.Activity
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -69,9 +71,47 @@ fun RoadFlowTheme(
         }
     }
 
+    val animatedColorScheme = animateColorScheme(colorScheme)
+
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = animatedColorScheme,
         typography = Typography,
         content = content
+    )
+}
+
+@Composable
+private fun animateColorScheme(target: androidx.compose.material3.ColorScheme): androidx.compose.material3.ColorScheme {
+    val animSpec = tween<Color>(durationMillis = 500)
+
+    return target.copy(
+        primary = animateColorAsState(target.primary, animSpec, label = "primary").value,
+        onPrimary = animateColorAsState(target.onPrimary, animSpec, label = "onPrimary").value,
+        primaryContainer = animateColorAsState(target.primaryContainer, animSpec, label = "primaryContainer").value,
+        onPrimaryContainer = animateColorAsState(target.onPrimaryContainer, animSpec, label = "onPrimaryContainer").value,
+        secondary = animateColorAsState(target.secondary, animSpec, label = "secondary").value,
+        onSecondary = animateColorAsState(target.onSecondary, animSpec, label = "onSecondary").value,
+        secondaryContainer = animateColorAsState(target.secondaryContainer, animSpec, label = "secondaryContainer").value,
+        onSecondaryContainer = animateColorAsState(target.onSecondaryContainer, animSpec, label = "onSecondaryContainer").value,
+        tertiary = animateColorAsState(target.tertiary, animSpec, label = "tertiary").value,
+        onTertiary = animateColorAsState(target.onTertiary, animSpec, label = "onTertiary").value,
+        tertiaryContainer = animateColorAsState(target.tertiaryContainer, animSpec, label = "tertiaryContainer").value,
+        onTertiaryContainer = animateColorAsState(target.onTertiaryContainer, animSpec, label = "onTertiaryContainer").value,
+        background = animateColorAsState(target.background, animSpec, label = "background").value,
+        onBackground = animateColorAsState(target.onBackground, animSpec, label = "onBackground").value,
+        surface = animateColorAsState(target.surface, animSpec, label = "surface").value,
+        onSurface = animateColorAsState(target.onSurface, animSpec, label = "onSurface").value,
+        surfaceVariant = animateColorAsState(target.surfaceVariant, animSpec, label = "surfaceVariant").value,
+        onSurfaceVariant = animateColorAsState(target.onSurfaceVariant, animSpec, label = "onSurfaceVariant").value,
+        error = animateColorAsState(target.error, animSpec, label = "error").value,
+        onError = animateColorAsState(target.onError, animSpec, label = "onError").value,
+        errorContainer = animateColorAsState(target.errorContainer, animSpec, label = "errorContainer").value,
+        onErrorContainer = animateColorAsState(target.onErrorContainer, animSpec, label = "onErrorContainer").value,
+        outline = animateColorAsState(target.outline, animSpec, label = "outline").value,
+        outlineVariant = animateColorAsState(target.outlineVariant, animSpec, label = "outlineVariant").value,
+        inverseSurface = animateColorAsState(target.inverseSurface, animSpec, label = "inverseSurface").value,
+        inverseOnSurface = animateColorAsState(target.inverseOnSurface, animSpec, label = "inverseOnSurface").value,
+        inversePrimary = animateColorAsState(target.inversePrimary, animSpec, label = "inversePrimary").value,
+        scrim = animateColorAsState(target.scrim, animSpec, label = "scrim").value
     )
 }

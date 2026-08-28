@@ -707,7 +707,14 @@ fun MapScreen(
                 requestEnableGps()
             }
         } else {
-            viewModel.locationService.startPassiveTracking()
+            showGpsLoading = true
+            coroutineScope.launch {
+                val lastKnown = viewModel.locationService.getLastKnownLocation()
+                if (lastKnown != null) {
+                    viewModel.locationService.setInitialLocation(lastKnown)
+                }
+                viewModel.locationService.startPassiveTracking()
+            }
         }
     }
 
@@ -743,7 +750,14 @@ fun MapScreen(
                         requestEnableGps()
                     }
                 } else {
-                    viewModel.locationService.startPassiveTracking()
+                    showGpsLoading = true
+                    coroutineScope.launch {
+                        val lastKnown = viewModel.locationService.getLastKnownLocation()
+                        if (lastKnown != null) {
+                            viewModel.locationService.setInitialLocation(lastKnown)
+                        }
+                        viewModel.locationService.startPassiveTracking()
+                    }
                 }
             }
         }
