@@ -104,9 +104,12 @@ object RadarNotificationHelper {
             builder.addAction(R.drawable.refresh, "Osvježi", refreshPendingIntent)
             builder.setStyle(inboxStyle)
         } else {
-            val hasExpandableContent = currentRadars.any {
+            val cityRadarsForExpand = currentRadars.filter {
                 it.city.equals(favoriteCity, ignoreCase = true) && it.time != "INFO"
             }
+            val expandDataDate = cityRadarsForExpand.firstOrNull()?.pageDate?.toLocalDate()
+            val isExpandDataStale = expandDataDate != null && expandDataDate != TimeProvider.effectiveRadarDate()
+            val hasExpandableContent = cityRadarsForExpand.isNotEmpty() && !isExpandDataStale
             if (hasExpandableContent) {
                 builder.setStyle(inboxStyle)
             }

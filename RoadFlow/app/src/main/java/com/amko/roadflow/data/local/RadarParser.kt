@@ -39,6 +39,7 @@ class RadarParser(
         .connectionPool(okhttp3.ConnectionPool(10, 5, java.util.concurrent.TimeUnit.MINUTES))
         .build()
     private val filePath = File(context.filesDir, "lista.txt")
+    private val cachedDateFilePath = File(context.filesDir, "lista_date.txt")
     private val baseUrl = Secrets.BASE_URL
 
     private val htmlCache = ConcurrentHashMap<Int, kotlinx.coroutines.Deferred<String>>()
@@ -58,16 +59,33 @@ class RadarParser(
     }
     fun isCachedForToday(): Boolean {
         if (!filePath.exists()) return false
-        val lastModified = LocalDate.ofEpochDay(filePath.lastModified() / 86400000L)
-        return lastModified == effectiveRadarDate()
+        val cachedDate = readCachedDate() ?: return false
+        return cachedDate == effectiveRadarDate()
+    }
+
+    private fun readCachedDate(): LocalDate? {
+        return try {
+            if (!cachedDateFilePath.exists()) return null
+            val text = cachedDateFilePath.readText(Charsets.UTF_8).trim()
+            if (text.isBlank()) null else LocalDate.parse(text)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun writeCachedDate(date: LocalDate) {
+        try {
+            cachedDateFilePath.writeText(date.toString(), Charsets.UTF_8)
+        } catch (e: Exception) {
+        }
     }
     suspend fun parseAllLocationsAsFlow(favoriteCanton: Canton? = null, forceRefresh: Boolean = false): kotlinx.coroutines.flow.Flow<RadarFetchProgress> =
         kotlinx.coroutines.flow.flow {
             val todayDate = effectiveRadarDate()
 
             if (!forceRefresh && filePath.exists()) {
-                val lastModified = LocalDate.ofEpochDay(filePath.lastModified() / 86400000L)
-                if (lastModified == todayDate) {
+                val cachedDate = readCachedDate()
+                if (cachedDate == todayDate) {
                     emit(RadarFetchProgress(parseFileContent(readFromFileAsync()), priorityCantonComplete = true))
                     return@flow
                 }
@@ -185,7 +203,6 @@ class RadarParser(
             emit(RadarFetchProgress(uniqueRadars, priorityCantonComplete = false))
 
             val hasActualData = uniqueRadars.any { it.time != "INFO" }
-
             if (hasActualData) {
                 val sb = StringBuilder()
                 uniqueRadars.groupBy { it.city }.forEach { (city, radars) ->
@@ -194,6 +211,7 @@ class RadarParser(
                     sb.appendLine()
                 }
                 saveToFileAsync(sb.toString())
+                writeCachedDate(todayDate)
 
                 val newDataOnly = deduped
                 if (newDataOnly.isNotEmpty()) {
