@@ -56,6 +56,10 @@ fun BottomNavBar(
     showLabels: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val iconSize = if (showLabels) 24.dp else 30.dp
+    val verticalPadding = if (showLabels) 12.dp else 16.dp
+    val horizontalPadding = if (showLabels) 4.dp else 12.dp
+
     if (isVertical) {
         Column(
             modifier = modifier
@@ -74,7 +78,7 @@ fun BottomNavBar(
                     modifier = Modifier
                         .width(64.dp)
                         .clickable { onNavigate(item.route) }
-                        .padding(horizontal = 4.dp, vertical = 12.dp)
+                        .padding(horizontal = horizontalPadding, vertical = verticalPadding)
                 ) {
                     Icon(
                         painter = painterResource(
@@ -82,7 +86,7 @@ fun BottomNavBar(
                         ),
                         contentDescription = item.label,
                         tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(iconSize)
                     )
                     if (showLabels) {
                         Text(
@@ -97,12 +101,16 @@ fun BottomNavBar(
             }
         }
     } else {
+        val rowIconSize = if (showLabels) 26.dp else 32.dp
+        val rowVerticalPadding = if (showLabels) 4.dp else 12.dp
+        val rowHorizontalPadding = if (showLabels) 20.dp else 24.dp
+
         Row(
             modifier = modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.primary)
                 .navigationBarsPadding()
-                .padding(vertical = 8.dp),
+                .padding(vertical = if (showLabels) 8.dp else 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             bottomNavItems.forEach { item ->
@@ -113,7 +121,7 @@ fun BottomNavBar(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
                         .clickable { onNavigate(item.route) }
-                        .padding(horizontal = 20.dp, vertical = 4.dp)
+                        .padding(horizontal = rowHorizontalPadding, vertical = rowVerticalPadding)
                 ) {
                     Icon(
                         painter = painterResource(
@@ -121,7 +129,7 @@ fun BottomNavBar(
                         ),
                         contentDescription = item.label,
                         tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(rowIconSize)
                     )
                     if (showLabels) {
                         Text(

@@ -443,7 +443,6 @@ fun MapScreen(
             controller.hide(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
-
         onDispose {
             if (window != null) {
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -491,7 +490,12 @@ fun MapScreen(
     var showNoGps by remember { mutableStateOf(false) }
     var showPermissionExplanation by remember { mutableStateOf(false) }
     var locationFound by remember { mutableStateOf(hadSavedCameraOnEnter) }
-    var gpsWasDisabled by remember { mutableStateOf(false) }
+    val initialGpsEnabled = remember {
+        val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE)
+                as android.location.LocationManager
+        locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+    }
+    var gpsWasDisabled by remember { mutableStateOf(!initialGpsEnabled) }
     var hasLocationPermission by remember {
         mutableStateOf(
             androidx.core.content.ContextCompat.checkSelfPermission(
@@ -500,7 +504,7 @@ fun MapScreen(
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         )
     }
-    var isGpsEnabled by remember { mutableStateOf(true) }
+    var isGpsEnabled by remember { mutableStateOf(initialGpsEnabled) }
     var showGpsLoading by remember { mutableStateOf(false) }
     var lastSnapWasSuccessful by remember { mutableStateOf(false) }
     var lastSnapDistanceMeters by remember { mutableStateOf<Double?>(null) }
@@ -774,7 +778,6 @@ fun MapScreen(
             val gpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
 
             if (!gpsEnabled) {
-                showNoGps = true
                 gpsWasDisabled = true
             }
 
@@ -811,6 +814,8 @@ fun MapScreen(
             )
         )
     }
+
+    val isActiveTrackingState = rememberUpdatedState(isActiveTracking)
 
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -865,6 +870,15 @@ fun MapScreen(
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
+
+            if (!isActiveTrackingState.value) {
+                try {
+                    mapViewRef.onPause()
+                    mapViewRef.onStop()
+                    mapViewRef.onDestroy()
+                } catch (e: Exception) {
+                }
+            }
         }
     }
 

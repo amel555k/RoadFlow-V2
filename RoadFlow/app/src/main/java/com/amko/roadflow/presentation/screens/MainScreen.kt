@@ -60,8 +60,6 @@ fun MainScreen(
     currentRoute: String?,
     onNavigate: (String) -> Unit
 ) {
-    android.util.Log.d("ROADFLOW1", "MainScreen composed viewModel=${System.identityHashCode(viewModel)}")
-
     val flatList by viewModel.uiList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -69,7 +67,6 @@ fun MainScreen(
     val showNoInternet by viewModel.showNoInternet.collectAsState()
     val currentDate by viewModel.currentDate.collectAsState()
     val hasError by viewModel.hasError.collectAsState()
-    android.util.Log.d("ROADFLOW1", "MainScreen recompose: flatList.size=${flatList.size} isLoading=$isLoading")
     val cityList = remember {
         com.amko.roadflow.data.local.RadarConfig.locations
             .map { it.name }
@@ -366,8 +363,8 @@ fun MainScreen(
             )
         }
 
-        }
     }
+}
 
 @Composable
 fun ThemeSwitch(

@@ -40,6 +40,8 @@ import com.amko.roadflow.ui.theme.RoadFlowTheme
 import org.maplibre.android.MapLibre
 import kotlin.math.max
 import kotlin.math.min
+import androidx.compose.ui.platform.LocalConfiguration
+import android.content.res.Configuration
 
 class MainActivity : ComponentActivity() {
 
@@ -99,6 +101,8 @@ class MainActivity : ComponentActivity() {
                     val mainViewModel: MainViewModel = viewModel()
                     val historyViewModel: HistoryViewModel = viewModel()
                     val soundViewModel: SoundViewModel = viewModel()
+                    val configuration = LocalConfiguration.current
+                    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
                     LaunchedEffect(currentRoute) {
                         requestedOrientation = if (currentRoute == "map") {
@@ -196,7 +200,13 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-                        composable("map") {
+                        composable(
+                            route = "map",
+                            enterTransition = { if (isPortrait) androidx.compose.animation.EnterTransition.None else null },
+                            exitTransition = { if (isPortrait) androidx.compose.animation.ExitTransition.None else null },
+                            popEnterTransition = { if (isPortrait) androidx.compose.animation.EnterTransition.None else null },
+                            popExitTransition = { if (isPortrait) androidx.compose.animation.ExitTransition.None else null }
+                        ) {
                             com.amko.roadflow.presentation.components.EntitlementGate(
                                 backgroundImageRes = com.amko.roadflow.R.drawable.mapa
                             ) {
