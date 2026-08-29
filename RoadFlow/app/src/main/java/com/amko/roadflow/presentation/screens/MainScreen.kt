@@ -287,16 +287,32 @@ fun MainScreen(
                     }
 
                     val refreshSuccessEvent by viewModel.refreshSuccessEvent.collectAsState()
+                    val alreadyUpToDateEvent by viewModel.alreadyUpToDateEvent.collectAsState()
                     var showSuccessCapsule by remember { mutableStateOf(false) }
+                    var successCapsuleText by remember { mutableStateOf("Podaci uspješno ažurirani") }
 
                     LaunchedEffect(refreshSuccessEvent) {
                         if (refreshSuccessEvent != 0L) {
+                            successCapsuleText = "Podaci uspješno ažurirani"
                             showSuccessCapsule = true
                             try {
                                 delay(1800L)
                             } finally {
                                 showSuccessCapsule = false
                                 viewModel.refreshSuccessEvent.value = 0L
+                            }
+                        }
+                    }
+
+                    LaunchedEffect(alreadyUpToDateEvent) {
+                        if (alreadyUpToDateEvent != 0L) {
+                            successCapsuleText = "Podaci su već ažurirani"
+                            showSuccessCapsule = true
+                            try {
+                                delay(1800L)
+                            } finally {
+                                showSuccessCapsule = false
+                                viewModel.alreadyUpToDateEvent.value = 0L
                             }
                         }
                     }
@@ -313,6 +329,7 @@ fun MainScreen(
                                 state = pullToRefreshState,
                                 isRefreshing = isRefreshing,
                                 showSuccess = showSuccessCapsule,
+                                capsuleText = successCapsuleText,
                                 modifier = Modifier.align(Alignment.TopCenter)
                             )
                         }
@@ -457,6 +474,7 @@ fun RefreshIndicatorWithSuccess(
     state: androidx.compose.material3.pulltorefresh.PullToRefreshState,
     isRefreshing: Boolean,
     showSuccess: Boolean,
+    capsuleText: String = "Podaci uspješno ažurirani",
     modifier: Modifier = Modifier
 ) {
     val capsuleWidth by animateDpAsState(
@@ -476,7 +494,7 @@ fun RefreshIndicatorWithSuccess(
     )
     val textAlpha by animateColorAsState(
         targetValue = if (showSuccess) MaterialTheme.colorScheme.onPrimary else Color.Transparent,
-        animationSpec = tween(durationMillis = 200, delayMillis = if (showSuccess) 200 else 0),
+        animationSpec = tween(durationMillis = if (showSuccess) 350 else 100),
         label = "capsuleTextAlpha"
     )
 
@@ -494,7 +512,7 @@ fun RefreshIndicatorWithSuccess(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Podaci uspješno ažurirani",
+                    text = capsuleText,
                     color = textAlpha,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium

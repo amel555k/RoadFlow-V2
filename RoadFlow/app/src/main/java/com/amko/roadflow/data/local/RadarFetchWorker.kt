@@ -15,8 +15,9 @@ class RadarFetchWorker(
     override suspend fun doWork(): Result {
         val prefs = applicationContext.getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
         val favoriteCity = prefs.getString("favorite_city", "") ?: ""
+        val notificationsEnabled = prefs.getBoolean("notification_enabled", true)
 
-        if (favoriteCity.isBlank()) {
+        if (favoriteCity.isBlank() || !notificationsEnabled) {
             return Result.success()
         }
 

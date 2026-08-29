@@ -1720,6 +1720,7 @@ fun MapScreen(
             currentRoute = currentRoute,
             onNavigate = onNavigate,
             isVertical = isLandscape,
+            showLabels = false,
             modifier = Modifier
                 .align(if (isLandscape) Alignment.CenterStart else Alignment.BottomCenter)
                 .onSizeChanged { size ->

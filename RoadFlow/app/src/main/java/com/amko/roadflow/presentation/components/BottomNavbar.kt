@@ -53,6 +53,7 @@ fun BottomNavBar(
     currentRoute: String?,
     onNavigate: (String) -> Unit,
     isVertical: Boolean = false,
+    showLabels: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (isVertical) {
@@ -83,13 +84,15 @@ fun BottomNavBar(
                         tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
                         modifier = Modifier.size(24.dp)
                     )
-                    Text(
-                        text = item.label,
-                        fontSize = 10.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    )
+                    if (showLabels) {
+                        Text(
+                            text = item.label,
+                            fontSize = 10.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
                 }
             }
         }
@@ -120,12 +123,14 @@ fun BottomNavBar(
                         tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
                         modifier = Modifier.size(26.dp)
                     )
-                    Text(
-                        text = item.label,
-                        fontSize = 12.sp,
-                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    )
+                    if (showLabels) {
+                        Text(
+                            text = item.label,
+                            fontSize = 12.sp,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f),
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
                 }
             }
         }

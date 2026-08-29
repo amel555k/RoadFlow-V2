@@ -46,6 +46,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentDate = MutableStateFlow(com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate())
 
     val canPullToRefresh = MutableStateFlow(true)
+    private val overrideRefreshUsed = MutableStateFlow(false)
 
     val notificationEnabled = MutableStateFlow(prefs.getBoolean("notification_enabled", true))
 
@@ -137,8 +138,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    val alreadyUpToDateEvent = MutableStateFlow(0L)
+
     fun refreshData() {
         if (isRefreshing.value) return
+
+        if (!canPullToRefresh.value) {
+            if (overrideRefreshUsed.value) {
+                alreadyUpToDateEvent.value = System.currentTimeMillis()
+                return
+            }
+
+            val todayStr = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate().toString()
+            overrideRefreshUsed.value = true
+            prefs.edit().putString("override_refresh_used_date", todayStr).apply()
+        }
 
         viewModelScope.launch {
             isRefreshing.value = true
@@ -156,6 +170,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             loadDataInternal(forceRefresh = isNewDay)
             prefs.edit().putString("last_seen_radar_date", todayStr).apply()
+
+            val overrideUsedDate = prefs.getString("override_refresh_used_date", null)
+            overrideRefreshUsed.value = overrideUsedDate == todayStr
 
             val cachedToday = withContext(Dispatchers.IO) { parser.isCachedForToday() }
             canPullToRefresh.value = !cachedToday

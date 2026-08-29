@@ -52,8 +52,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
         com.amko.roadflow.data.local.AppEntitlementState.init(application)
-        com.amko.roadflow.data.local.RadarWorkScheduler.schedulePeriodic(application)
-        com.amko.roadflow.data.local.RadarWorkScheduler.scheduleOneTime(application)
+
+        val startupPrefs = getSharedPreferences("roadflow_prefs", MODE_PRIVATE)
+        if (startupPrefs.getBoolean("notification_enabled", true)) {
+            com.amko.roadflow.data.local.RadarWorkScheduler.schedulePeriodic(application)
+            com.amko.roadflow.data.local.RadarWorkScheduler.scheduleOneTime(application)
+        }
 
         val openedFromNotification = intent?.getBooleanExtra(RadarTrackingService.EXTRA_OPEN_MAP, false) == true
         val openedFromMapShortcut = intent?.getBooleanExtra("open_map_shortcut", false) == true
