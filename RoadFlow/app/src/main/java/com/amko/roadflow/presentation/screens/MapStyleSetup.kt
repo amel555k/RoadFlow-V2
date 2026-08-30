@@ -58,26 +58,6 @@ fun setupMapStyle(
 
     style.addSource(
         org.maplibre.android.style.sources.GeoJsonSource(
-            radarSourceId,
-            FeatureCollection.fromFeatures(emptyList())
-        )
-    )
-
-    style.addLayer(
-        org.maplibre.android.style.layers.SymbolLayer(radarLayerId, radarSourceId).apply {
-            setProperties(
-                org.maplibre.android.style.layers.PropertyFactory.iconImage(
-                    org.maplibre.android.style.expressions.Expression.get("iconId")
-                ),
-                org.maplibre.android.style.layers.PropertyFactory.iconSize(1.0f),
-                org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap(true),
-                org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true)
-            )
-        }
-    )
-
-    style.addSource(
-        org.maplibre.android.style.sources.GeoJsonSource(
             routeAltSourceId,
             FeatureCollection.fromFeatures(emptyList())
         )
@@ -200,6 +180,26 @@ fun setupMapStyle(
                 org.maplibre.android.style.layers.PropertyFactory.lineJoin(
                     org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND
                 )
+            )
+        }
+    )
+
+    style.addSource(
+        org.maplibre.android.style.sources.GeoJsonSource(
+            radarSourceId,
+            FeatureCollection.fromFeatures(emptyList())
+        )
+    )
+
+    style.addLayer(
+        org.maplibre.android.style.layers.SymbolLayer(radarLayerId, radarSourceId).apply {
+            setProperties(
+                org.maplibre.android.style.layers.PropertyFactory.iconImage(
+                    org.maplibre.android.style.expressions.Expression.get("iconId")
+                ),
+                org.maplibre.android.style.layers.PropertyFactory.iconSize(1.0f),
+                org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap(true),
+                org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement(true)
             )
         }
     )

@@ -118,20 +118,24 @@ fun LocationSearchBar(
     var query by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+    var searchError by remember { mutableStateOf(false) }
     var recentLocations by remember { mutableStateOf(loadRecentLocations(context)) }
 
     LaunchedEffect(query) {
         if (query.trim().length < 3) {
             searchResults = emptyList()
+            searchError = false
             isLoading = false
             return@LaunchedEffect
         }
         isLoading = true
+        searchError = false
         delay(500)
-        searchResults = searchLocations(query)
+        val outcome = searchLocations(query)
+        searchResults = outcome.results
+        searchError = outcome.isError
         isLoading = false
     }
-
     Box(modifier = modifier) {
         if (isPickingOnMap) {
             Card(
@@ -359,27 +363,29 @@ fun LocationSearchBar(
                         }
                     }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                isExpanded = false
-                                onExpandedChange(false)
-                                query = ""
-                                searchResults = emptyList()
-                                expandedFromSelection = false
-                                onPickOnMapStart()
-                            }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    if (query.isEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    isExpanded = false
+                                    onExpandedChange(false)
+                                    query = ""
+                                    searchResults = emptyList()
+                                    expandedFromSelection = false
+                                    onPickOnMapStart()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
 
-                        Text(
-                            text = "Odaberi destinaciju na karti",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF004E5A)
-                        )
+                            Text(
+                                text = "Odaberi destinaciju na karti",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF004E5A)
+                            )
+                        }
                     }
 
                     AnimatedVisibility(
@@ -432,12 +438,35 @@ fun LocationSearchBar(
                             }
                         }
                     }
+
+                    AnimatedVisibility(
+                        visible = searchError && !isLoading,
+                        enter = fadeIn(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Column {
+                            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 20.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Provjerite internet konekciju",
+                                    fontSize = 13.sp,
+                                    color = Color.Gray,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
-private suspend fun searchLocations(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
+private suspend fun searchLocations(query: String): SearchOutcome = withContext(Dispatchers.IO) {
     val client = OkHttpClient()
     val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
     val url = "https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&addressdetails=1&limit=5&countrycodes=ba"
@@ -449,8 +478,8 @@ private suspend fun searchLocations(query: String): List<SearchResult> = withCon
 
     try {
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return@withContext emptyList()
-            val body = response.body?.string() ?: return@withContext emptyList()
+            if (!response.isSuccessful) return@withContext SearchOutcome(emptyList(), isError = true)
+            val body = response.body?.string() ?: return@withContext SearchOutcome(emptyList(), isError = true)
             val jsonArray = JSONArray(body)
             val results = mutableListOf<SearchResult>()
 
@@ -464,9 +493,14 @@ private suspend fun searchLocations(query: String): List<SearchResult> = withCon
                     results.add(SearchResult(name, lat, lon))
                 }
             }
-            results
+            SearchOutcome(results, isError = false)
         }
     } catch (e: Exception) {
-        emptyList()
+        SearchOutcome(emptyList(), isError = true)
     }
 }
+
+data class SearchOutcome(
+    val results: List<SearchResult>,
+    val isError: Boolean
+)

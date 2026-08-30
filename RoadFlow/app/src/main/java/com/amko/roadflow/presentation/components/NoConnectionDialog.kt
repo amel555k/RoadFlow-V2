@@ -16,7 +16,8 @@ fun NoConnectionDialog(
     title: String,
     message: String,
     onDismiss: () -> Unit,
-    onCancel: (() -> Unit)? = null
+    onCancel: (() -> Unit)? = null,
+    confirmButtonText: String = "UKLJUČI"
 ) {
     Dialog(onDismissRequest = onCancel ?: onDismiss) {
         Card(
@@ -52,7 +53,7 @@ fun NoConnectionDialog(
                         onClick = onDismiss,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("UKLJUČI", color = MaterialTheme.colorScheme.onPrimary)
+                        Text(confirmButtonText, color = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             }

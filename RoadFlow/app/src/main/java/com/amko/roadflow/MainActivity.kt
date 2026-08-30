@@ -184,19 +184,22 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("history") {
+                            val historyNavigate: (String) -> Unit = { route ->
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
                             com.amko.roadflow.presentation.components.EntitlementGate(
-                                backgroundImageRes = com.amko.roadflow.R.drawable.kalendar
+                                backgroundImageRes = com.amko.roadflow.R.drawable.kalendar,
+                                currentRoute = currentRoute,
+                                onNavigate = historyNavigate
                             ) {
                                 HistoryScreen(
                                     viewModel = historyViewModel,
                                     currentRoute = currentRoute,
-                                    onNavigate = { route ->
-                                        navController.navigate(route) {
-                                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
+                                    onNavigate = historyNavigate
                                 )
                             }
                         }
@@ -207,18 +210,21 @@ class MainActivity : ComponentActivity() {
                             popEnterTransition = { if (isPortrait) androidx.compose.animation.EnterTransition.None else null },
                             popExitTransition = { if (isPortrait) androidx.compose.animation.ExitTransition.None else null }
                         ) {
+                                val mapNavigate: (String) -> Unit = { route ->
+                            navController.navigate(route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
                             com.amko.roadflow.presentation.components.EntitlementGate(
-                                backgroundImageRes = com.amko.roadflow.R.drawable.mapa
+                                backgroundImageRes = com.amko.roadflow.R.drawable.mapa,
+                                currentRoute = currentRoute,
+                                onNavigate = mapNavigate
                             ) {
                                 MapScreen(
                                     currentRoute = currentRoute,
-                                    onNavigate = { route ->
-                                        navController.navigate(route) {
-                                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
+                                    onNavigate = mapNavigate
                                 )
                             }
                         }

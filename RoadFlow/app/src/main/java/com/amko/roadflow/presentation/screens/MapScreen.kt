@@ -526,6 +526,7 @@ fun MapScreen(
     var selectedDestinationName by remember { mutableStateOf<String?>(null) }
     var destinationScreenPoint by remember { mutableStateOf<PointF?>(null) }
     var isCalculatingRoute by remember { mutableStateOf(false) }
+    var routeLoadFailed by remember { mutableStateOf(false) }
     var isSearchExpanded by remember { mutableStateOf(false) }
     var isPickingOnMap by remember { mutableStateOf(false) }
     val routingService = remember { RoutingService() }
@@ -550,12 +551,18 @@ fun MapScreen(
     suspend fun computeRoutesTo(destination: LatLng) {
         val uLoc = userLocation ?: return
         isCalculatingRoute = true
-        val results = routingService.getRoutes(
-            uLoc.latitude,
-            uLoc.longitude,
-            destination.latitude,
-            destination.longitude
-        )
+        routeLoadFailed = false
+
+        val results = try {
+            routingService.getRoutes(
+                uLoc.latitude,
+                uLoc.longitude,
+                destination.latitude,
+                destination.longitude
+            )
+        } catch (e: Exception) {
+            emptyList()
+        }
 
         val shortestRoute = results.minByOrNull { it.distanceMeters }
         val effectiveResults = if (shortestRoute != null && shortestRoute.distanceMeters < SHORT_ROUTE_THRESHOLD_METERS) {
@@ -578,6 +585,10 @@ fun MapScreen(
             mapRef?.animateCamera(
                 CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 150)
             )
+        } else {
+            routeLoadFailed = true
+            selectedDestination = null
+            selectedDestinationName = null
         }
     }
     fun pushUserGeoJson(lat: Double, lng: Double, rotation: Float, force: Boolean = false) {
@@ -779,6 +790,8 @@ fun MapScreen(
 
             if (!gpsEnabled) {
                 gpsWasDisabled = true
+            } else if (!locationFound) {
+                showGpsLoading = true
             }
 
             val lastKnown = viewModel.locationService.getLastKnownLocation()
@@ -935,6 +948,13 @@ fun MapScreen(
     LaunchedEffect(locationFound, showGpsLoading) {
         if (showGpsLoading && locationFound) {
             showGpsLoading = false
+        }
+    }
+
+    LaunchedEffect(routeLoadFailed) {
+        if (routeLoadFailed) {
+            delay(2500L)
+            routeLoadFailed = false
         }
     }
 
@@ -1728,8 +1748,45 @@ fun MapScreen(
                     )
                 }
             }
-        }
 
+            if (isCalculatingRoute) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (isLandscape) 20.dp else 50.dp)
+                        .background(
+                            color = androidx.compose.ui.graphics.Color(0xFF004E5A),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "Učitavanje rute...",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+
+            if (routeLoadFailed) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (isLandscape) 20.dp else 50.dp)
+                        .background(
+                            color = androidx.compose.ui.graphics.Color(0xFFB00020),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "Neuspješno učitavanje rute",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
         BottomNavBar(
             currentRoute = currentRoute,
             onNavigate = onNavigate,

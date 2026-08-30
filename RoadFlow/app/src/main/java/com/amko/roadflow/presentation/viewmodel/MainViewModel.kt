@@ -179,6 +179,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refetchIfCacheStale() {
+        if (isRefreshing.value || isLoading.value) return
+
+        viewModelScope.launch {
+            val cachedToday = withContext(Dispatchers.IO) { parser.isCachedForToday() }
+            if (cachedToday) {
+                showNoInternet.value = false
+                return@launch
+            }
+
+            isRefreshing.value = true
+            loadDataInternal(forceRefresh = true)
+
+            val cachedAfterFetch = withContext(Dispatchers.IO) { parser.isCachedForToday() }
+            canPullToRefresh.value = !cachedAfterFetch
+
+            if (cachedAfterFetch) {
+                overrideRefreshUsed.value = false
+                prefs.edit().remove("override_refresh_used_date").apply()
+            }
+        }
+    }
+
+    suspend fun isCacheFreshForToday(): Boolean {
+        return withContext(Dispatchers.IO) { parser.isCachedForToday() }
+    }
+
     private suspend fun loadDataInternal(forceRefresh: Boolean = false) {
         try {
             hasError.value = false

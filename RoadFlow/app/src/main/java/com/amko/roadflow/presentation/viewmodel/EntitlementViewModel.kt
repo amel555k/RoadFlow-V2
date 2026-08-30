@@ -22,6 +22,7 @@ class EntitlementViewModel(application: Application) : AndroidViewModel(applicat
     val isSubscriptionRequired: StateFlow<Boolean> = entitlementRepository.isSubscriptionRequired
     val price: StateFlow<String> = entitlementRepository.price
     val isInitialized: StateFlow<Boolean> = entitlementRepository.isInitialized
+    val checkState: StateFlow<com.amko.roadflow.data.local.EntitlementCheckState> = entitlementRepository.checkState
 
     private val _isSigningIn = MutableStateFlow(false)
     val isSigningIn: StateFlow<Boolean> = _isSigningIn
@@ -94,10 +95,15 @@ class EntitlementViewModel(application: Application) : AndroidViewModel(applicat
     fun cancelConfirmPayment() {
         _showConfirmPayment.value = false
     }
-
     fun signOut() {
         googleAuthService.signOut()
         entitlementRepository.clearEmail()
         _loggedInEmail.value = null
+    }
+
+    fun retryAfterNetworkError() {
+        viewModelScope.launch {
+            entitlementRepository.retryAfterNetworkError()
+        }
     }
 }

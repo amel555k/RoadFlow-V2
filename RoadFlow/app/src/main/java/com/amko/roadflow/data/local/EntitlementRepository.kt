@@ -1,9 +1,18 @@
 package com.amko.roadflow.data.local
 
 import android.app.Application
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.time.LocalDate
+
+enum class EntitlementCheckState {
+    CHECKING,
+    PREMIUM,
+    PAYWALL,
+    NETWORK_ERROR
+}
 
 class EntitlementRepository(
     private val application: Application,
@@ -22,6 +31,9 @@ class EntitlementRepository(
 
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized
+
+    private val _checkState = MutableStateFlow(EntitlementCheckState.CHECKING)
+    val checkState: StateFlow<EntitlementCheckState> = _checkState
 
     fun getSavedEmail(): String? {
         return prefs.getString("logged_in_email", null)
@@ -42,6 +54,7 @@ class EntitlementRepository(
 
     suspend fun confirmPaymentAsync(email: String) {
         _isPremium.value = paymentService.ensureUserEntryAsync(email)
+        _checkState.value = if (_isPremium.value) EntitlementCheckState.PREMIUM else EntitlementCheckState.PAYWALL
     }
 
     suspend fun checkIsAlreadySubscribedAsync(email: String): Boolean {
@@ -50,11 +63,26 @@ class EntitlementRepository(
         return result
     }
 
+    private fun isInternetAvailable(): Boolean {
+        val cm = application.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return false
+        val capabilities = cm.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
     suspend fun initializeAsync() {
+        _checkState.value = EntitlementCheckState.CHECKING
+
         val currentMonthKey = "${LocalDate.now().year}-${LocalDate.now().monthValue}"
         val savedMonthKey = prefs.getString("subscription_check_month", null)
 
         if (savedMonthKey != currentMonthKey) {
+            if (!isInternetAvailable()) {
+                _checkState.value = EntitlementCheckState.NETWORK_ERROR
+                _isInitialized.value = true
+                return
+            }
+
             val globalStatus = paymentService.getGlobalStatusAsync()
             val fetchedPrice = paymentService.getPriceAsync()
 
@@ -78,6 +106,12 @@ class EntitlementRepository(
             _isPremium.value = true
         }
 
+        _checkState.value = if (_isPremium.value) EntitlementCheckState.PREMIUM else EntitlementCheckState.PAYWALL
         _isInitialized.value = true
+    }
+
+    suspend fun retryAfterNetworkError() {
+        if (_checkState.value != EntitlementCheckState.NETWORK_ERROR) return
+        initializeAsync()
     }
 }

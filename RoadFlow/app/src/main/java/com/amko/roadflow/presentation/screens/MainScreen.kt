@@ -51,6 +51,7 @@ import com.amko.roadflow.presentation.viewmodel.MainViewModel
 import com.amko.roadflow.presentation.viewmodel.RadarListItem
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +76,7 @@ fun MainScreen(
     }
 
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -104,8 +106,12 @@ fun MainScreen(
         val connectivityManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
-                if (viewModel.hasError.value && viewModel.uiList.value.isEmpty() && !viewModel.isLoading.value) {
-                    viewModel.loadData()
+                if (viewModel.isLoading.value || viewModel.isRefreshing.value) return
+                coroutineScope.launch {
+                    val cacheFresh = viewModel.isCacheFreshForToday()
+                    if (!cacheFresh) {
+                        viewModel.refetchIfCacheStale()
+                    }
                 }
             }
         }
@@ -114,7 +120,6 @@ fun MainScreen(
             connectivityManager.unregisterNetworkCallback(networkCallback)
         }
     }
-
     var isDropdownOpen by remember { mutableStateOf(false) }
 
     val cantonList = remember {
@@ -359,7 +364,8 @@ fun MainScreen(
             NoConnectionDialog(
                 title = "Nema internet konekcije",
                 message = "Molimo provjerite da li su uključeni WiFi ili mobilni podaci.",
-                onDismiss = { viewModel.showNoInternet.value = false }
+                onDismiss = { viewModel.showNoInternet.value = false },
+                confirmButtonText = "OK"
             )
         }
 
