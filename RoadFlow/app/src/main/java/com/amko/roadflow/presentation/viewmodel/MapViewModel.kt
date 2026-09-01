@@ -11,17 +11,20 @@ import com.amko.roadflow.data.local.RadarConfig
 import com.amko.roadflow.data.local.RadarParser
 import com.amko.roadflow.data.local.RadarTrackingService
 import com.amko.roadflow.domain.model.RadarData
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val firebaseService = FirebaseService()
-    private val parser = RadarParser(application, firebaseService)
+    private val parser = com.amko.roadflow.RoadFlowApp.sharedRadarParser
+        ?: RadarParser(application, firebaseService)
     private val coordinateRepository = CoordinateRepository(application, firebaseService)
     private val prefs = application.getSharedPreferences("roadflow_prefs", Application.MODE_PRIVATE)
 
@@ -84,28 +87,54 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         loadRadars()
         startLocalFilterTicker()
     }
-
     fun loadRadars() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                if (RadarConfig.coordinates.isEmpty()) {
+                val diskCoords = coordinateRepository.loadCachedCoordinatesAsync()
+                if (diskCoords.isNotEmpty()) {
+                    RadarConfig.coordinates = diskCoords
+                } else if (RadarConfig.coordinates.isEmpty()) {
                     RadarConfig.coordinates = coordinateRepository.loadCoordinatesAsync()
+                }
+
+                val cachedRadars = parser.getExpandedRadarsForMapAsync()
+                if (cachedRadars.isNotEmpty()) {
+                    _allRadars.value = cachedRadars
+                    applyCurrentFilter()
+                    _isLoading.value = false
                 }
 
                 val lastSeenDate = prefs.getString("last_seen_radar_date", null)
                 val todayStr = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate().toString()
                 val isNewDay = lastSeenDate != todayStr
+                val needsRadarRefresh = isNewDay || !parser.isCachedForToday()
 
-                parser.parseAllLocationsAsFlow(forceRefresh = isNewDay).collect { }
-                prefs.edit().putString("last_seen_radar_date", todayStr).apply()
+                if (needsRadarRefresh) {
+                    parser.parseAllLocationsAsFlow(forceRefresh = isNewDay).collect { }
+                    prefs.edit().putString("last_seen_radar_date", todayStr).apply()
 
-                parser.debugLogUnmatchedLocations()
+                    parser.invalidateExpandedCache()
+                    val refreshedRadars = parser.getExpandedRadarsForMapAsync()
+                    _allRadars.value = refreshedRadars
+                    applyCurrentFilter()
+                }
 
-                val all = parser.getExpandedRadarsForMapAsync()
-                _allRadars.value = all
+                if (coordinateRepository.needsCoordinateRefresh()) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val freshCoords = coordinateRepository.refreshCoordinatesAsync()
+                        if (freshCoords.isNotEmpty()) {
+                            RadarConfig.coordinates = freshCoords
+                            parser.invalidateExpandedCache()
+                            val updatedRadars = parser.getExpandedRadarsForMapAsync()
+                            withContext(Dispatchers.Main) {
+                                _allRadars.value = updatedRadars
+                                applyCurrentFilter()
+                            }
+                        }
+                    }
+                }
 
-                applyCurrentFilter()
                 _isLoading.value = false
             } catch (e: Exception) {
                 _isLoading.value = false

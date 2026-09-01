@@ -77,7 +77,7 @@ fun BottomNavBar(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
                         .width(64.dp)
-                        .clickable { onNavigate(item.route) }
+                        .clickable(enabled = !isSelected) { onNavigate(item.route) }
                         .padding(horizontal = horizontalPadding, vertical = verticalPadding)
                 ) {
                     Icon(
@@ -120,7 +120,7 @@ fun BottomNavBar(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
-                        .clickable { onNavigate(item.route) }
+                        .clickable(enabled = !isSelected) { onNavigate(item.route) }
                         .padding(horizontal = rowHorizontalPadding, vertical = rowVerticalPadding)
                 ) {
                     Icon(

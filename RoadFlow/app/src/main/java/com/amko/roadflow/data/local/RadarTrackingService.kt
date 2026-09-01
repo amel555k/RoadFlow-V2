@@ -125,7 +125,8 @@ class RadarTrackingService : Service() {
             val ctx = sharedAppContext ?: return
             try {
                 val firebaseService = FirebaseService()
-                val parser = RadarParser(ctx as android.app.Application, firebaseService)
+                val parser = com.amko.roadflow.RoadFlowApp.sharedRadarParser
+                    ?: RadarParser(ctx as android.app.Application, firebaseService)
                 parser.parseAllLocationsAsFlow(forceRefresh = forceRefresh).collect { }
                 val all = parser.getExpandedRadarsForMapAsync()
                 _allRadars.value = all

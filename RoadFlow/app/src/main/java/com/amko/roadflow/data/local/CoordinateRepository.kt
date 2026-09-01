@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import android.util.Log
 
 class CoordinateRepository(
     private val context: Context,
@@ -14,6 +15,9 @@ class CoordinateRepository(
 ) {
     private val filePath = File(context.filesDir, "coordinates.json")
     private val prefs = context.getSharedPreferences("roadflow_prefs", Context.MODE_PRIVATE)
+    companion object {
+        private const val TAG = "CoordsFetchDebug"
+    }
 
     private fun currentFetchSlot(): String {
         val date = TimeProvider.effectiveRadarDate()
@@ -22,37 +26,56 @@ class CoordinateRepository(
         return "$date-$window"
     }
 
+    suspend fun loadCachedCoordinatesAsync(): List<RadarCoordinate> = withContext(Dispatchers.IO) {
+        if (!filePath.exists()) return@withContext emptyList()
+        readFromDiskAsync()
+    }
+
+    fun needsCoordinateRefresh(): Boolean {
+        val lastFetchedSlot = prefs.getString("coords_last_fetch_slot", null)
+        return lastFetchedSlot != currentFetchSlot()
+    }
+
     suspend fun loadCoordinatesAsync(forceRefresh: Boolean = false): List<RadarCoordinate> = withContext(Dispatchers.IO) {
         val lastFetchedSlot = prefs.getString("coords_last_fetch_slot", null)
         val currentSlot = currentFetchSlot()
+        val cached = if (filePath.exists()) readFromDiskAsync() else emptyList()
 
-        if (!forceRefresh && lastFetchedSlot == currentSlot && filePath.exists()) {
-            val cached = readFromDiskAsync()
-            if (cached.isNotEmpty()) {
-                return@withContext cached
-            }
+        if (!forceRefresh && lastFetchedSlot == currentSlot && cached.isNotEmpty()) {
+            Log.d(TAG, "Koristim kes ne treba preuzeti (slot=$currentSlot, size=${cached.size})")
+            return@withContext cached
         }
 
+        if (!forceRefresh && cached.isNotEmpty()) {
+            Log.d(TAG, "STARI KES sa diska (slot $lastFetchedSlot -> $currentSlot), GitHub ide u pozadini")
+            return@withContext cached
+        }
+
+        Log.d(TAG, "Nema kesha, preuzimam s GitHuba...")
         val fetched = fetchAndCacheAsync()
         if (fetched.isNotEmpty()) {
             prefs.edit().putString("coords_last_fetch_slot", currentSlot).apply()
+            Log.d(TAG, "GitHub koordinate preuzete: ${fetched.size}")
             return@withContext fetched
         }
 
-        if (filePath.exists()) {
-            val cached = readFromDiskAsync()
-            if (cached.isNotEmpty()) {
-                return@withContext cached
-            }
+        if (cached.isNotEmpty()) {
+            Log.d(TAG, "GitHub fail, koristim stari kes sa diska: ${cached.size}")
+            return@withContext cached
         }
 
+        Log.d(TAG, "Nema kesha i GitHub fail")
         emptyList()
     }
 
     suspend fun refreshCoordinatesAsync(): List<RadarCoordinate> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "STARI KES... preuzimam s GitHuba (slot=${currentFetchSlot()})")
         val fetched = fetchAndCacheAsync()
         if (fetched.isNotEmpty()) {
             prefs.edit().putString("coords_last_fetch_slot", currentFetchSlot()).apply()
+            Log.d(TAG, "GitHub refresh gotov: ${fetched.size} koordinata")
+        } else {
+            Log.d(TAG, "GitHub refresh fail")
         }
         fetched
     }

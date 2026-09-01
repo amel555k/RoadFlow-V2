@@ -86,7 +86,16 @@ class RadarParser(
             if (!forceRefresh && filePath.exists()) {
                 val cachedDate = readCachedDate()
                 if (cachedDate == todayDate) {
-                    emit(RadarFetchProgress(parseFileContent(readFromFileAsync()), priorityCantonComplete = true))
+                    val currentModified = filePath.lastModified()
+                    val parsedContent = if (currentModified == cachedParsedContentModified && cachedParsedContent.isNotEmpty()) {
+                        cachedParsedContent
+                    } else {
+                        val parsed = parseFileContent(readFromFileAsync())
+                        cachedParsedContent = parsed
+                        cachedParsedContentModified = currentModified
+                        parsed
+                    }
+                    emit(RadarFetchProgress(parsedContent, priorityCantonComplete = true))
                     return@flow
                 }
             }
@@ -221,47 +230,6 @@ class RadarParser(
             }
         }.flowOn(Dispatchers.IO)
 
-
-    suspend fun debugLogUnmatchedLocations() {
-        android.util.Log.d("ROADFLOW_DEBUG", "debugLogUnmatchedLocations: RadarConfig.coordinates.size=${RadarConfig.coordinates.size}")
-        val content = readFromFileAsync()
-        if (content.isBlank()) {
-            android.util.Log.d("ROADFLOW_DEBUG", "lista.txt je prazan ili ne postoji")
-            return
-        }
-
-        android.util.Log.d("ROADFLOW_DEBUG", "===== CIJEL SADRŽAJ lista.txt =====")
-        content.split("\n").filter { it.isNotBlank() }.forEach {
-            android.util.Log.d("ROADFLOW_DEBUG_RAW", it)
-        }
-
-        android.util.Log.d("ROADFLOW_DEBUG", "===== LOKACIJE BEZ KOORDINATA (promašaji) =====")
-        val lines = content.split("\n").filter { it.isNotBlank() }
-        var currentCity = ""
-        var missCount = 0
-
-        lines.forEach { line ->
-            val trimmed = line.trim()
-            if (trimmed.startsWith("===") && trimmed.endsWith("===")) {
-                currentCity = trimmed.replace("===", "").trim()
-                return@forEach
-            }
-            val parts = trimmed.split(" - ", limit = 2)
-            if (parts.size == 2) {
-                val timePart = parts[0].trim()
-                val locationName = parts[1].trim()
-                val coord = RadarConfig.findCoordinateByName(locationName, currentCity)
-                if (coord == null) {
-                    missCount++
-                    android.util.Log.w(
-                        "ROADFLOW_DEBUG_MISS",
-                        "GRAD='$currentCity' | VRIJEME='$timePart' | LOKACIJA='$locationName'"
-                    )
-                }
-            }
-        }
-        android.util.Log.d("ROADFLOW_DEBUG", "===== UKUPNO PROMAŠAJA: $missCount =====")
-    }
     private suspend fun parseSingleIdWithErrorHandlingAsync(baseCityName: String, id: Int, mapEnabled: Boolean): List<RadarData> {
         return try {
             parseSingleIdAsync(baseCityName, id, mapEnabled)
@@ -381,6 +349,10 @@ class RadarParser(
     }
 
     private var cachedAllRadars: List<RadarData> = emptyList()
+    private var cachedParsedContent: List<RadarData> = emptyList()
+    private var cachedParsedContentModified: Long = -1L
+    private var cachedExpandedRadars: List<RadarData> = emptyList()
+    private var cachedExpandedModified: Long = -1L
 
     suspend fun getRadarsForCanton(canton: Canton): List<RadarData> {
         if (cachedAllRadars.isEmpty()) {
@@ -396,6 +368,12 @@ class RadarParser(
     fun updateCache(radars: List<RadarData>) {
         cachedAllRadars = radars
     }
+
+    fun invalidateExpandedCache() {
+        cachedExpandedRadars = emptyList()
+        cachedExpandedModified = -1L
+    }
+
     private fun preprocessBihamkLocation(location: String): String {
         if (location.isBlank()) return location
         var result = location.replace(SATI_REGEX, " ")
@@ -466,10 +444,19 @@ class RadarParser(
         return parseFileContent(fileContent).filter { citiesSet.contains(it.city) && it.time != "INFO" }
     }
 
-    suspend fun getExpandedRadarsForMapAsync(): List<RadarData> {
+    suspend fun getExpandedRadarsForMapAsync(): List<RadarData> = withContext(Dispatchers.IO) {
+        val currentModified = filePath.lastModified()
+        if (currentModified == cachedExpandedModified && cachedExpandedRadars.isNotEmpty()) {
+            return@withContext cachedExpandedRadars
+        }
+
         val fileContent = readFromFileAsync()
-        if (fileContent.isBlank()) return emptyList()
-        return parseFileContentExpanded(fileContent)
+        if (fileContent.isBlank()) return@withContext emptyList()
+
+        val result = parseFileContentExpanded(fileContent)
+        cachedExpandedRadars = result
+        cachedExpandedModified = currentModified
+        result
     }
 
     private fun parseFileContentExpanded(content: String): List<RadarData> {

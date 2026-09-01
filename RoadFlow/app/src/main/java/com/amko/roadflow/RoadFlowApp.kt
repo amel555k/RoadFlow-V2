@@ -9,6 +9,7 @@ import android.util.Log
 import com.amko.roadflow.data.local.CoordinateRepository
 import com.amko.roadflow.data.local.FirebaseService
 import com.amko.roadflow.data.local.RadarConfig
+import com.amko.roadflow.data.local.RadarParser
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.AppCheckProviderFactory
 import com.google.firebase.appcheck.FirebaseAppCheck
@@ -25,6 +26,10 @@ class RoadFlowApp : Application() {
     companion object {
         @Volatile
         var coordinatesReady: Boolean = false
+            private set
+
+        @Volatile
+        var sharedRadarParser: RadarParser? = null
             private set
     }
 
@@ -60,6 +65,8 @@ class RoadFlowApp : Application() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
+
+        sharedRadarParser = RadarParser(applicationContext, FirebaseService())
 
         val coordinateRepository = CoordinateRepository(applicationContext, FirebaseService())
         appScope.launch {
