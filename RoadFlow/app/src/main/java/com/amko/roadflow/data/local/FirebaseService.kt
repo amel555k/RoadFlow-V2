@@ -162,6 +162,24 @@ class FirebaseService {
         radars
     }
 
+
+    suspend fun firebaseRadarsNodeExistsAsync(date: LocalDate): Boolean = withContext(Dispatchers.IO) {
+        val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        val url = getAuthenticatedUrl("$FIREBASE_BASE_URL/$dateStr.json")
+
+        try {
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+
+            if (!response.isSuccessful) return@withContext false
+
+            val json = response.body?.string()
+            !(json.isNullOrBlank() || json == "null")
+        } catch (e: Exception) {
+            true
+        }
+    }
+
     suspend fun getHistoryRadarsAsync(date: LocalDate): List<RadarData> = withContext(Dispatchers.IO) {
         val radars = mutableListOf<RadarData>()
         val dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))

@@ -472,6 +472,7 @@ fun MapScreen(
     val speedLimitInZone by alertService.speedLimit.collectAsState()
     val currentSpeed by viewModel.locationService.speedKmh.collectAsState()
     val isInRadarZone by alertService.isInZone.collectAsState()
+    val isLoadingRadars by viewModel.isLoading.collectAsState()
     var mapRef by remember { mutableStateOf<MapLibreMap?>(null) }
     var styleRef by remember { mutableStateOf<Style?>(null) }
     val selectedFilter by viewModel.selectedFilter.collectAsState()
@@ -1791,6 +1792,25 @@ fun MapScreen(
                 ) {
                     Text(
                         text = "Učitavanje rute...",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+
+            if (isLoadingRadars && !isCalculatingRoute && !showGpsLoading) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (isLandscape) 20.dp else 50.dp)
+                        .background(
+                            color = androidx.compose.ui.graphics.Color(0xFF004E5A),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "Učitavanje radara...",
                         color = androidx.compose.ui.graphics.Color.White,
                         fontSize = 14.sp
                     )

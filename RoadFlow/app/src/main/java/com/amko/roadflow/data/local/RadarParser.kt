@@ -113,13 +113,19 @@ class RadarParser(
             val accumulated = mutableListOf<RadarData>()
 
             coroutineScope {
-                val firebaseData = firebaseService.getFirebaseRadarsAsync(todayDate)
+                val firebaseNodeExists = firebaseService.firebaseRadarsNodeExistsAsync(todayDate)
+                val firebaseData = if (firebaseNodeExists) firebaseService.getFirebaseRadarsAsync(todayDate) else emptyList()
                 accumulated.addAll(firebaseData)
                 emit(RadarFetchProgress(accumulated.sortedWith(compareByDescending<RadarData> { it.city }
                     .thenByDescending { it.pageDate ?: LocalDateTime.MIN })))
-                val locationGroups = RadarConfig.locations
-                    .filter { !it.fromFirebase && it.parsingEnabled}
-                    .sortedBy { if (favoriteCanton != null && it.canton == favoriteCanton) 0 else 1 }
+
+                val locationGroups = if (firebaseNodeExists) {
+                    RadarConfig.locations
+                        .filter { !it.fromFirebase && it.parsingEnabled }
+                } else {
+                    RadarConfig.locations
+                        .filter { it.parsingEnabled && it.possibleIds.isNotEmpty() }
+                }.sortedBy { if (favoriteCanton != null && it.canton == favoriteCanton) 0 else 1 }
 
                 val priorityLocationNames = if (favoriteCanton != null) {
                     RadarConfig.locations

@@ -259,26 +259,28 @@ private fun DayDetailsOverlay(
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.secondary)
-                    .clickable { onDropdownToggle() }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = selectedCantonLabel,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontSize = 14.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = if (isDropdownOpen) "▲" else "▼",
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontSize = 14.sp
-                )
+            if (uiList.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.secondary)
+                        .clickable { onDropdownToggle() }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = selectedCantonLabel,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontSize = 14.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = if (isDropdownOpen) "▲" else "▼",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontSize = 14.sp
+                    )
+                }
             }
 
             if (isLoading) {
@@ -288,7 +290,7 @@ private fun DayDetailsOverlay(
             } else if (uiList.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "Nema radara za odabrani dan.",
+                        text = "Nema podataka za odabrani datum.",
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                         fontSize = 16.sp
                     )
