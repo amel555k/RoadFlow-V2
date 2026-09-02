@@ -809,23 +809,24 @@ fun MapScreen(
 
     LaunchedEffect(isLandscape, isActiveTracking, isMapReady) {
         val map = mapRef ?: return@LaunchedEffect
-        if (!isMapReady) return@LaunchedEffect
-        if (!isActiveTracking) return@LaunchedEffect
+        if (!isMapReady || !isActiveTracking || isTransitioningToTracking) return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
 
         val correctedPadding = doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0)
+        val currentZoom = map.cameraPosition.zoom.takeIf { it >= 14.0 } ?: 17.0
 
         map.moveCamera(
             CameraUpdateFactory.newCameraPosition(
                 CameraPosition.Builder()
                     .target(LatLng(loc.latitude, loc.longitude))
-                    .zoom(17.0)
+                    .zoom(currentZoom)
                     .tilt(45.0)
                     .bearing(userHeading.toDouble())
                     .padding(correctedPadding)
                     .build()
             )
         )
+        map.uiSettings.focalPoint = map.projection.toScreenLocation(LatLng(loc.latitude, loc.longitude))
     }
 
     val isActiveTrackingState = rememberUpdatedState(isActiveTracking)
@@ -1088,26 +1089,28 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(renderedPos) {
+    LaunchedEffect(renderedPos, currentMapPadding) {
         val map = mapRef ?: return@LaunchedEffect
         if (!isMapReady || !isActiveTracking || !didInitialZoom || isTransitioningToTracking) return@LaunchedEffect
 
         pushUserGeoJson(renderedPos.lat, renderedPos.lng, renderedPos.bearing, force = true)
 
+        val userLatLng = LatLng(renderedPos.lat, renderedPos.lng)
         val trackingPadding = doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0)
+        val currentZoom = map.cameraPosition.zoom
         map.moveCamera(
             CameraUpdateFactory.newCameraPosition(
                 CameraPosition.Builder()
-                    .target(LatLng(renderedPos.lat, renderedPos.lng))
-                    .zoom(17.0)
+                    .target(userLatLng)
+                    .zoom(currentZoom)
                     .tilt(45.0)
                     .bearing(renderedPos.bearing.toDouble())
                     .padding(trackingPadding)
                     .build()
             )
         )
+        map.uiSettings.focalPoint = map.projection.toScreenLocation(userLatLng)
     }
-
     LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled, isCameraLocked) {
         val map = mapRef ?: return@LaunchedEffect
         val loc = userLocation ?: return@LaunchedEffect
@@ -1115,11 +1118,20 @@ fun MapScreen(
         if (!isGpsEnabled) return@LaunchedEffect
 
         val gesturesAllowed = !isActiveTracking && !isCameraLocked
+        val zoomAllowed = !isCameraLocked
         map.uiSettings.isScrollGesturesEnabled = gesturesAllowed
-        map.uiSettings.isZoomGesturesEnabled = gesturesAllowed
+        map.uiSettings.isZoomGesturesEnabled = zoomAllowed
         map.uiSettings.isRotateGesturesEnabled = gesturesAllowed
         map.uiSettings.isTiltGesturesEnabled = gesturesAllowed
-
+        if (isActiveTracking) {
+            map.setMinZoomPreference(14.0)
+            map.setMaxZoomPreference(17.0)
+            map.uiSettings.focalPoint = map.projection.toScreenLocation(LatLng(loc.latitude, loc.longitude))
+        } else {
+            map.setMinZoomPreference(6.0)
+            map.setMaxZoomPreference(18.0)
+            map.uiSettings.focalPoint = null
+        }
         val activeRouteCoords = currentRouteResult?.coordinates
         val snapResult = if (isActiveTracking && activeRouteCoords != null) {
             snapToRoute(loc.latitude, loc.longitude, userHeading, activeRouteCoords, lastSnapWasSuccessful)
@@ -1171,6 +1183,7 @@ fun MapScreen(
             val startLatLng = LatLng(animator.renderedPos.value.lat, animator.renderedPos.value.lng)
             val targetLatLng = LatLng(loc.latitude, loc.longitude)
             val jumpDistanceMeters = startLatLng.distanceTo(targetLatLng)
+            val currentZoom = map.cameraPosition.zoom
 
             if (jumpDistanceMeters > 300.0 || isTransitioningToTracking) {
                 suppressSpeedUntilNanos = System.nanoTime() + 3_000_000_000L
@@ -1181,7 +1194,7 @@ fun MapScreen(
                         CameraUpdateFactory.newCameraPosition(
                             CameraPosition.Builder()
                                 .target(LatLng(effectiveLat, effectiveLng))
-                                .zoom(17.0)
+                                .zoom(currentZoom)
                                 .tilt(45.0)
                                 .bearing(targetRotation.toDouble())
                                 .padding(trackingPadding)
@@ -1285,6 +1298,7 @@ fun MapScreen(
         val map = mapRef ?: return
         if (isActiveTracking) {
             isCameraLocked = true
+            map.uiSettings.focalPoint = null
             viewModel.locationService.stopActiveTracking()
             viewModel.stopBackgroundTracking()
             alertService.stopAlerts()
@@ -1313,6 +1327,8 @@ fun MapScreen(
             isCameraLocked = false
             viewModel.locationService.startPassiveTracking()
         } else {
+            isTransitioningToTracking = true
+            isCameraLocked = true
             viewModel.locationService.stopPassiveTracking()
             viewModel.locationService.startActiveTracking()
             viewModel.startBackgroundTracking()
@@ -1322,8 +1338,7 @@ fun MapScreen(
             if (loc != null) {
                 alertService.checkProximity(loc)
                 val currentLoc = viewModel.locationService.location.value
-                isTransitioningToTracking = true
-                isCameraLocked = true
+                val trackingPadding = doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0)
                 map.animateCamera(
                     CameraUpdateFactory.newCameraPosition(
                         CameraPosition.Builder()
@@ -1331,13 +1346,27 @@ fun MapScreen(
                             .zoom(17.0)
                             .tilt(45.0)
                             .bearing(userHeading)
+                            .padding(trackingPadding)
                             .build()
-                    ), 500,
+                    ), 600,
                     object : MapLibreMap.CancelableCallback {
-                        override fun onCancel() { isTransitioningToTracking = false; isCameraLocked = false }
-                        override fun onFinish() { isTransitioningToTracking = false; isCameraLocked = false }
+                        override fun onCancel() {
+                            isTransitioningToTracking = false
+                            isCameraLocked = false
+                        }
+                        override fun onFinish() {
+                            isTransitioningToTracking = false
+                            isCameraLocked = false
+                            val targetPoint = currentLoc?.let { LatLng(it.latitude, it.longitude) }
+                                ?: map.cameraPosition.target
+                                ?: LatLng(0.0, 0.0)
+                            map.uiSettings.focalPoint = map.projection.toScreenLocation(targetPoint)
+                        }
                     }
                 )
+            } else {
+                isTransitioningToTracking = false
+                isCameraLocked = false
             }
         }
     }
