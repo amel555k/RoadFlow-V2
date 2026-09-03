@@ -81,6 +81,7 @@ class LocationTrackingService(private val context: Context) {
     private val speedZeroDistanceMeters = 1.5f
     private var activeFixCount = 0
     private val minFixesForReliableSpeed = 3
+    private val maxAcceptableAccuracyMeters = 25f
 
     @SuppressLint("MissingPermission")
     fun startPassiveTracking() {
@@ -103,11 +104,14 @@ class LocationTrackingService(private val context: Context) {
         passiveCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { loc ->
+                    val rawSpeedMs = if (loc.hasSpeed()) loc.speed else 0f
+                    val speedKmh = rawSpeedMs * 3.6f
+                    _speedKmh.value = speedKmh
+                    updateBearing(loc, speedKmh)
                     _location.value = loc
                 }
             }
         }
-
         fusedClient.requestLocationUpdates(request, passiveCallback!!, Looper.getMainLooper())
 
         if (!_isActiveTracking.value) {
@@ -153,12 +157,21 @@ class LocationTrackingService(private val context: Context) {
                     val rawSpeedMs = if (loc.hasSpeed()) loc.speed else 0f
                     var speedKmh = rawSpeedMs * 3.6f
 
-                    if (distanceFromLastFix != null && distanceFromLastFix < speedZeroDistanceMeters && speedKmh < 3f) {
+                    val accuracyMeters = if (loc.hasAccuracy()) loc.accuracy else 20f
+                    val movementThreshold = maxOf(speedZeroDistanceMeters, accuracyMeters * 0.5f)
+                    val fixIsReliable = accuracyMeters <= maxAcceptableAccuracyMeters
+
+                    if (distanceFromLastFix != null && distanceFromLastFix < movementThreshold && speedKmh < 3f) {
                         speedKmh = 0f
                     }
 
                     activeFixCount++
-                    _speedKmh.value = if (activeFixCount >= minFixesForReliableSpeed) speedKmh else null
+
+                    _speedKmh.value = when {
+                        !fixIsReliable -> _speedKmh.value
+                        activeFixCount < minFixesForReliableSpeed -> null
+                        else -> speedKmh
+                    }
 
                     lastFixLat = loc.latitude
                     lastFixLng = loc.longitude
@@ -260,14 +273,18 @@ class LocationTrackingService(private val context: Context) {
                     val azimuth = Math.toDegrees(orientation[0].toDouble())
                     val newCompassBearing = (azimuth + 360) % 360
 
-                    var diff = newCompassBearing - _heading.value
+                    lastCompassBearing = newCompassBearing
 
-                    while (diff > 180) diff -= 360
-                    while (diff < -180) diff += 360
+                    val gpsIsDriving = (_speedKmh.value ?: 0f) >= minSpeedForBearingKmh
+                    if (!gpsIsDriving) {
+                        var diff = newCompassBearing - _heading.value
 
-                    if (kotlin.math.abs(diff) > 3.0) {
-                        lastCompassBearing = newCompassBearing
-                        _heading.value = newCompassBearing
+                        while (diff > 180) diff -= 360
+                        while (diff < -180) diff += 360
+
+                        if (kotlin.math.abs(diff) > 3.0) {
+                            _heading.value = newCompassBearing
+                        }
                     }
                 }
             }

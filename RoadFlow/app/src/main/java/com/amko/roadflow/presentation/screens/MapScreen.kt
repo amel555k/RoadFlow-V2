@@ -960,13 +960,8 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(currentSpeed, suppressSpeedUntilNanos) {
-        val now = System.nanoTime()
-        displaySpeedKmh = when {
-            currentSpeed == null -> null
-            now < suppressSpeedUntilNanos -> 0f
-            else -> currentSpeed
-        }
+    LaunchedEffect(currentSpeed) {
+        displaySpeedKmh = currentSpeed
     }
 
     LaunchedEffect(routeAlternatives) {
@@ -1084,17 +1079,17 @@ fun MapScreen(
         updateDestinationScreenPoint()
     }
 
-    LaunchedEffect(isActiveTracking, isGpsEnabled) {
-        if (isActiveTracking && isGpsEnabled) {
+    LaunchedEffect(isGpsEnabled) {
+        if (isGpsEnabled) {
             animator.start()
         }
     }
 
     LaunchedEffect(renderedPos, currentMapPadding) {
+        pushUserGeoJson(renderedPos.lat, renderedPos.lng, renderedPos.bearing, force = true)
+
         val map = mapRef ?: return@LaunchedEffect
         if (!isMapReady || !isActiveTracking || !didInitialZoom || isTransitioningToTracking) return@LaunchedEffect
-
-        pushUserGeoJson(renderedPos.lat, renderedPos.lng, renderedPos.bearing, force = true)
 
         val userLatLng = LatLng(renderedPos.lat, renderedPos.lng)
         val trackingPadding = doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0)
@@ -1153,10 +1148,10 @@ fun MapScreen(
         val effectiveLat = if (snapResult?.isAccepted == true) snapResult.lat else loc.latitude
         val effectiveLng = if (snapResult?.isAccepted == true) snapResult.lng else loc.longitude
 
-        val targetRotation = if (isActiveTracking) {
-            if (snapResult?.isAccepted == true) snapResult.bearing else userHeading.toFloat()
+        val targetRotation = if (snapResult?.isAccepted == true) {
+            snapResult.bearing
         } else {
-            0f
+            userHeading.toFloat()
         }
 
         val trackingPadding = if (isActiveTracking) doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0) else doubleArrayOf(0.0, 0.0, 0.0, 0.0)
@@ -1178,8 +1173,7 @@ fun MapScreen(
                 ), 1000
             )
         } else if (!isActiveTracking) {
-            animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed ?: 0f, forceSnap = true)
-            pushUserGeoJson(effectiveLat, effectiveLng, targetRotation, force = true)
+            animator.updateFix(effectiveLat, effectiveLng, targetRotation, currentSpeed ?: 0f, forceSnap = false)
         } else {
             val startLatLng = LatLng(animator.renderedPos.value.lat, animator.renderedPos.value.lng)
             val targetLatLng = LatLng(loc.latitude, loc.longitude)
