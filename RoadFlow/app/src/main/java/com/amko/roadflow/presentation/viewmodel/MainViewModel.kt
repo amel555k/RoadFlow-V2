@@ -47,6 +47,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val canPullToRefresh = MutableStateFlow(true)
     private val overrideRefreshUsed = MutableStateFlow(false)
+    val alreadyUpToDateEvent = MutableStateFlow(0L)
+    val scrollToTopEvent = MutableStateFlow(0L)
 
     val notificationEnabled = MutableStateFlow(prefs.getBoolean("notification_enabled", true))
 
@@ -93,9 +95,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var filteringJob: Job? = null
 
     private fun buildUiList(radars: List<RadarData>): List<RadarListItem> {
+        val cityOrder = RadarConfig.locations.map { it.name }.distinct()
         val grouped = radars.groupBy { it.city }
+        val orderedCities = cityOrder.filter { grouped.containsKey(it) } +
+                grouped.keys.filter { it !in cityOrder }
         return buildList {
-            grouped.forEach { (city, cityRadars) ->
+            orderedCities.forEach { city ->
+                val cityRadars = grouped[city] ?: return@forEach
                 add(RadarListItem.CityHeader(city))
                 cityRadars.forEach { radar -> add(RadarListItem.RadarEntry(radar)) }
                 add(RadarListItem.Spacer(id = "spacer_$city"))
@@ -138,8 +144,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    val alreadyUpToDateEvent = MutableStateFlow(0L)
-
     fun refreshData() {
         if (isRefreshing.value) return
 
@@ -154,6 +158,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             prefs.edit().putString("override_refresh_used_date", todayStr).apply()
         }
 
+        scrollToTopEvent.value = System.currentTimeMillis()
         viewModelScope.launch {
             isRefreshing.value = true
             loadDataInternal(forceRefresh = true)
@@ -167,6 +172,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val lastSeenDate = prefs.getString("last_seen_radar_date", null)
             val todayStr = com.amko.roadflow.data.local.TimeProvider.effectiveRadarDate().toString()
             val isNewDay = lastSeenDate != todayStr
+
+            if (isNewDay) {
+                scrollToTopEvent.value = System.currentTimeMillis()
+            }
 
             loadDataInternal(forceRefresh = isNewDay)
             prefs.edit().putString("last_seen_radar_date", todayStr).apply()
@@ -189,6 +198,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
+            scrollToTopEvent.value = System.currentTimeMillis()
             isRefreshing.value = true
             loadDataInternal(forceRefresh = true)
 

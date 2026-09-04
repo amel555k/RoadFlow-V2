@@ -63,6 +63,14 @@ fun MainScreen(
 ) {
     val flatList by viewModel.uiList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scrollToTopEvent by viewModel.scrollToTopEvent.collectAsState()
+
+    LaunchedEffect(scrollToTopEvent) {
+        if (scrollToTopEvent != 0L) {
+            listState.animateScrollToItem(0)
+        }
+    }
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val selectedCanton by viewModel.selectedCanton.collectAsState()
     val showNoInternet by viewModel.showNoInternet.collectAsState()
@@ -230,7 +238,7 @@ fun MainScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = if (hasError) "Neuspješno preuzimanje, provjerite internet konekciju" else "Nema radara za odabrani kanton.",
+                                    text = if (hasError) "Neuspješno preuzimanje podataka, provjerite internet konekciju" else "Nema radara za odabrani kanton.",
                                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                     fontSize = 16.sp,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -239,6 +247,7 @@ fun MainScreen(
                             }
                         } else {
                             LazyColumn(
+                                state = listState,
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(0.dp)
