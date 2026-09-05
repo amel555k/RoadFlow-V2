@@ -68,6 +68,7 @@ import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import android.location.Location
+import com.mapbox.android.gestures.MoveGestureDetector
 
 private const val RADAR_ICON_ID = "radar-icon"
 private const val RADAR_ICON_STACIONARNI_ID = "radar-icon-stacionarni"
@@ -479,6 +480,7 @@ fun MapScreen(
     val selectedRadar by viewModel.selectedRadar.collectAsState()
     var isMapReady by remember { mutableStateOf(false) }
     var mapInitialized by remember { mutableStateOf(false) }
+    var isCameraMovedByUser by remember { mutableStateOf(false) }
 
     val animator = remember { ActiveTrackingAnimator() }
     val renderedPos by animator.renderedPos.collectAsState()
@@ -1093,19 +1095,17 @@ fun MapScreen(
 
         val userLatLng = LatLng(renderedPos.lat, renderedPos.lng)
         val trackingPadding = doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0)
-        val currentZoom = map.cameraPosition.zoom
+
         map.moveCamera(
             CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder()
+                CameraPosition.Builder(map.cameraPosition)
                     .target(userLatLng)
-                    .zoom(currentZoom)
                     .tilt(45.0)
                     .bearing(renderedPos.bearing.toDouble())
                     .padding(trackingPadding)
                     .build()
             )
         )
-        map.uiSettings.focalPoint = map.projection.toScreenLocation(userLatLng)
     }
     LaunchedEffect(userLocation, userHeading, isMapReady, isActiveTracking, isGpsEnabled, isCameraLocked) {
         val map = mapRef ?: return@LaunchedEffect
@@ -1324,6 +1324,7 @@ fun MapScreen(
         } else {
             isTransitioningToTracking = true
             isCameraLocked = true
+            isCameraMovedByUser = false
             viewModel.locationService.stopPassiveTracking()
             viewModel.locationService.startActiveTracking()
             viewModel.startBackgroundTracking()
@@ -1367,6 +1368,7 @@ fun MapScreen(
     }
 
     suspend fun locateMe() {
+        isCameraMovedByUser = false
         val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.ACCESS_FINE_LOCATION
@@ -1383,15 +1385,37 @@ fun MapScreen(
 
         if (!gpsEnabled) {
             showNoGps = true
-        } else {
-            showNoGps = false
-            showGpsLoading = true
-            val lastKnown = viewModel.locationService.getLastKnownLocation()
-            if (lastKnown != null) {
-                viewModel.locationService.setInitialLocation(lastKnown)
-            }
-            viewModel.locationService.startPassiveTracking()
+            return
         }
+
+        showNoGps = false
+
+        val existingLoc = viewModel.locationService.location.value
+        if (locationFound && existingLoc != null) {
+            val map = mapRef
+            if (map != null) {
+                map.animateCamera(
+                    CameraUpdateFactory.newCameraPosition(
+                        CameraPosition.Builder()
+                            .target(LatLng(existingLoc.latitude, existingLoc.longitude))
+                            .zoom(if (isActiveTracking) 17.0 else 14.0)
+                            .tilt(if (isActiveTracking) 45.0 else 0.0)
+                            .bearing(if (isActiveTracking) userHeading else 0.0)
+                            .padding(if (isActiveTracking) doubleArrayOf(0.0, currentMapPadding, 0.0, 0.0) else doubleArrayOf(0.0, 0.0, 0.0, 0.0))
+                            .build()
+                    ), 800
+                )
+            }
+            return
+        }
+
+        showGpsLoading = true
+        didInitialZoom = false
+        val lastKnown = viewModel.locationService.getLastKnownLocation()
+        if (lastKnown != null) {
+            viewModel.locationService.setInitialLocation(lastKnown)
+        }
+        viewModel.locationService.startPassiveTracking()
     }
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -1420,6 +1444,16 @@ fun MapScreen(
                             updateDestinationScreenPoint()
                         }
 
+                        map.addOnMoveListener(object : MapLibreMap.OnMoveListener {
+                            override fun onMoveBegin(detector: MoveGestureDetector) {
+                                isCameraMovedByUser = true
+                            }
+
+                            override fun onMove(detector: MoveGestureDetector) {
+                            }
+
+                            override fun onMoveEnd(detector: MoveGestureDetector) {}
+                        })
                         map.addOnCameraIdleListener {
                             updateDestinationScreenPoint()
                             if (!isMapReady) return@addOnCameraIdleListener
@@ -1662,6 +1696,12 @@ fun MapScreen(
                         )
                     }
 
+                    if (isCameraMovedByUser && didInitialZoom && locationFound && isGpsEnabled && hasLocationPermission && !isPickingOnMap) {
+                        LocateMeButton(
+                            onClick = { coroutineScope.launch { locateMe() } }
+                        )
+                    }
+
                     if (didInitialZoom && locationFound && isGpsEnabled) {
                         TrackingToggleButton(
                             isActiveTracking = isActiveTracking,
@@ -1682,6 +1722,12 @@ fun MapScreen(
                     verticalArrangement = Arrangement.spacedBy(15.dp),
                     horizontalAlignment = Alignment.End
                 ) {
+                    if (isCameraMovedByUser && didInitialZoom && locationFound && isGpsEnabled && hasLocationPermission && !isPickingOnMap) {
+                        LocateMeButton(
+                            onClick = { coroutineScope.launch { locateMe() } }
+                        )
+                    }
+
                     if (didInitialZoom && locationFound && isGpsEnabled) {
                         TrackingToggleButton(
                             isActiveTracking = isActiveTracking,

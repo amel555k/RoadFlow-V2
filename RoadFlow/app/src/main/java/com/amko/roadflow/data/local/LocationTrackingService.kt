@@ -213,7 +213,7 @@ class LocationTrackingService(private val context: Context) {
         _heading.value = smoothed
     }
 
-    private fun smoothBearing(current: Double, target: Double, factor: Double = 0.6): Double {
+    private fun smoothBearing(current: Double, target: Double, factor: Double = 1.0): Double {
         var diff = target - current
         while (diff > 180) diff -= 360
         while (diff < -180) diff += 360
